@@ -1,11 +1,26 @@
 import { db } from "@workspace/db";
-import { corpusChunksTable } from "@workspace/db";
 import { sql } from "drizzle-orm";
+import { generateEmbedding } from "./embeddings.js";
 
 export async function retrieveRelevantChunks(query: string, topK = 10): Promise<string[]> {
   if (!query.trim()) return [];
 
   try {
+    const queryEmbedding = await generateEmbedding(query);
+    const embeddingLiteral = `[${queryEmbedding.join(",")}]`;
+
+    const results = await db.execute(sql`
+      SELECT chunk_text
+      FROM corpus_chunks
+      WHERE embedding IS NOT NULL
+      ORDER BY embedding <=> ${embeddingLiteral}::vector
+      LIMIT ${topK}
+    `);
+
+    if ((results.rows as unknown[]).length > 0) {
+      return (results.rows as { chunk_text: string }[]).map((r) => r.chunk_text);
+    }
+
     const searchTerms = query
       .toLowerCase()
       .replace(/[^a-z0-9\s]/g, " ")
@@ -15,23 +30,8 @@ export async function retrieveRelevantChunks(query: string, topK = 10): Promise<
       .slice(0, 20);
 
     if (searchTerms.length === 0) return [];
-
-    const tsqueryStr = searchTerms.join(" | ");
-
-    const results = await db.execute(sql`
-      SELECT chunk_text,
-             ts_rank(to_tsvector('english', chunk_text), to_tsquery('english', ${tsqueryStr})) AS rank
-      FROM corpus_chunks
-      WHERE to_tsvector('english', chunk_text) @@ to_tsquery('english', ${tsqueryStr})
-      ORDER BY rank DESC
-      LIMIT ${topK}
-    `);
-
-    if ((results.rows as unknown[]).length > 0) {
-      return (results.rows as { chunk_text: string }[]).map((r) => r.chunk_text);
-    }
-
     const likePattern = `%${searchTerms.join("%")}%`;
+
     const fallback = await db.execute(sql`
       SELECT chunk_text
       FROM corpus_chunks

@@ -133,13 +133,18 @@ router.post("/corpus/upload", upload.single("file"), async (req, res) => {
       }
 
       if (chunks.length > 0) {
-        const rows = chunks.map((text) => ({
-          id: generateId(),
-          documentId: docId,
-          chunkText: text,
-        }));
-        for (let i = 0; i < rows.length; i += 50) {
-          await db.insert(corpusChunksTable).values(rows.slice(i, i + 50));
+        const { generateEmbeddingsBatch } = await import("../lib/embeddings.js");
+        const INGEST_BATCH = 20;
+        for (let i = 0; i < chunks.length; i += INGEST_BATCH) {
+          const batch = chunks.slice(i, i + INGEST_BATCH);
+          const embeddings = await generateEmbeddingsBatch(batch);
+          const rows = batch.map((text, j) => ({
+            id: generateId(),
+            documentId: docId,
+            chunkText: text,
+            embedding: embeddings[j],
+          }));
+          await db.insert(corpusChunksTable).values(rows);
         }
       }
 
