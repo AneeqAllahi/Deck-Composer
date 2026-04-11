@@ -63,6 +63,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/BrandProfile"
+    delete:
+      operationId: resetBrandProfile
+      tags: [brand]
+      summary: Reset brand profile to factory defaults
+      responses:
+        "200":
+          description: Reset brand profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BrandProfile"
 
   /decks:
     get:

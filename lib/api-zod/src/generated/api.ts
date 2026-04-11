@@ -57,6 +57,21 @@ export const UpdateBrandProfileResponse = zod.object({
 });
 
 /**
+ * @summary Reset brand profile to factory defaults
+ */
+export const ResetBrandProfileResponse = zod.object({
+  id: zod.string(),
+  primaryColor: zod.string().describe("Hex color code e.g."),
+  secondaryColor: zod.string(),
+  accentColor: zod.string(),
+  headingFont: zod.string(),
+  bodyFont: zod.string(),
+  logoObjectPath: zod.string().nullish(),
+  density: zod.enum(["spacious", "balanced", "dense"]),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
  * @summary List all decks
  */
 export const ListDecksResponseItem = zod.object({

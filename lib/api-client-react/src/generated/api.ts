@@ -281,6 +281,87 @@ export const useUpdateBrandProfile = <
 };
 
 /**
+ * @summary Reset brand profile to factory defaults
+ */
+export const getResetBrandProfileUrl = () => {
+  return `/api/brand-profile`;
+};
+
+export const resetBrandProfile = async (
+  options?: RequestInit,
+): Promise<BrandProfile> => {
+  return customFetch<BrandProfile>(getResetBrandProfileUrl(), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getResetBrandProfileMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof resetBrandProfile>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof resetBrandProfile>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["resetBrandProfile"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof resetBrandProfile>>,
+    void
+  > = () => {
+    return resetBrandProfile(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ResetBrandProfileMutationResult = NonNullable<
+  Awaited<ReturnType<typeof resetBrandProfile>>
+>;
+
+export type ResetBrandProfileMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Reset brand profile to factory defaults
+ */
+export const useResetBrandProfile = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof resetBrandProfile>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof resetBrandProfile>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getResetBrandProfileMutationOptions(options));
+};
+
+/**
  * @summary List all decks
  */
 export const getListDecksUrl = () => {

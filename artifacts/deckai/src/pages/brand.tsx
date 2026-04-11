@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { useGetBrandProfile, useUpdateBrandProfile, getGetBrandProfileQueryKey } from "@workspace/api-client-react";
+import { useGetBrandProfile, useUpdateBrandProfile, useResetBrandProfile, getGetBrandProfileQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -28,8 +28,19 @@ type BrandFormValues = z.infer<typeof brandFormSchema>;
 export function BrandPage() {
   const { data: brandProfile, isLoading } = useGetBrandProfile();
   const updateBrand = useUpdateBrandProfile();
+  const resetBrand = useResetBrandProfile();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+
+  const handleReset = async () => {
+    try {
+      const defaults = await resetBrand.mutateAsync();
+      queryClient.setQueryData(getGetBrandProfileQueryKey(), defaults);
+      toast({ title: "Brand profile reset to defaults" });
+    } catch {
+      toast({ title: "Failed to reset brand profile", variant: "destructive" });
+    }
+  };
   
   const form = useForm<BrandFormValues>({
     resolver: zodResolver(brandFormSchema),
@@ -209,10 +220,21 @@ export function BrandPage() {
                       )}
                     />
 
-                    <Button type="submit" disabled={updateBrand.isPending || !form.formState.isDirty}>
-                      {updateBrand.isPending ? "Saving..." : "Save Changes"}
-                      {!updateBrand.isPending && <Save className="ml-2 h-4 w-4" />}
-                    </Button>
+                    <div className="flex gap-3">
+                      <Button type="submit" disabled={updateBrand.isPending || !form.formState.isDirty}>
+                        {updateBrand.isPending ? "Saving..." : "Save Changes"}
+                        {!updateBrand.isPending && <Save className="ml-2 h-4 w-4" />}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        data-testid="button-reset-brand"
+                        disabled={resetBrand.isPending}
+                        onClick={handleReset}
+                      >
+                        {resetBrand.isPending ? "Resetting..." : "Reset to Defaults"}
+                      </Button>
+                    </div>
                   </form>
                 </Form>
               </CardContent>

@@ -112,6 +112,10 @@ function SlideCanvas({ deckId, slide }: { deckId: string; slide: Slide }) {
   const [bodyVal, setBodyVal] = useState(slide.body);
   const [columnLeftVal, setColumnLeftVal] = useState(slide.columnLeft ?? "");
   const [columnRightVal, setColumnRightVal] = useState(slide.columnRight ?? "");
+  const [bulletVals, setBulletVals] = useState<string[]>(slide.bulletPoints ?? []);
+  const [editingBulletIdx, setEditingBulletIdx] = useState<number | null>(null);
+  const [metricVals, setMetricVals] = useState<{ value: string; label: string }[]>(slide.metrics ?? []);
+  const [editingMetric, setEditingMetric] = useState<{ idx: number; field: "value" | "label" } | null>(null);
   const [regenInstruction, setRegenInstruction] = useState("");
 
   useEffect(() => {
@@ -119,10 +123,14 @@ function SlideCanvas({ deckId, slide }: { deckId: string; slide: Slide }) {
     setBodyVal(slide.body);
     setColumnLeftVal(slide.columnLeft ?? "");
     setColumnRightVal(slide.columnRight ?? "");
+    setBulletVals(slide.bulletPoints ?? []);
+    setMetricVals(slide.metrics ?? []);
     setIsEditingTitle(false);
     setIsEditingBody(false);
     setIsEditingColumnLeft(false);
     setIsEditingColumnRight(false);
+    setEditingBulletIdx(null);
+    setEditingMetric(null);
   }, [slide.slideIndex]);
 
   const updateLocalSlide = (patch: Partial<Slide>) => {
@@ -182,6 +190,33 @@ function SlideCanvas({ deckId, slide }: { deckId: string; slide: Slide }) {
     } catch {
       setColumnRightVal(slide.columnRight ?? "");
       toast({ title: "Failed to save column", variant: "destructive" });
+    }
+  };
+
+  const handleSaveBullet = async (idx: number) => {
+    setEditingBulletIdx(null);
+    const newBullets = [...bulletVals];
+    if (newBullets[idx] === (slide.bulletPoints ?? [])[idx]) return;
+    try {
+      await updateSlide.mutateAsync({ id: deckId, slideIndex: slide.slideIndex, data: { bulletPoints: newBullets } });
+      updateLocalSlide({ bulletPoints: newBullets });
+    } catch {
+      setBulletVals(slide.bulletPoints ?? []);
+      toast({ title: "Failed to save bullet point", variant: "destructive" });
+    }
+  };
+
+  const handleSaveMetric = async (idx: number, field: "value" | "label") => {
+    setEditingMetric(null);
+    const newMetrics = metricVals.map((m, i) => ({ ...m }));
+    const orig = (slide.metrics ?? [])[idx];
+    if (!orig || newMetrics[idx][field] === orig[field]) return;
+    try {
+      await updateSlide.mutateAsync({ id: deckId, slideIndex: slide.slideIndex, data: { metrics: newMetrics } });
+      updateLocalSlide({ metrics: newMetrics });
+    } catch {
+      setMetricVals(slide.metrics ?? []);
+      toast({ title: "Failed to save metric", variant: "destructive" });
     }
   };
 
@@ -327,11 +362,47 @@ function SlideCanvas({ deckId, slide }: { deckId: string; slide: Slide }) {
           <div className="flex flex-col h-full p-12">
             <EditableTitle className="text-2xl font-serif font-bold mb-8 pb-4 border-b" />
             <div className="grid grid-cols-2 gap-6 flex-1 content-center">
-              {slide.metrics && slide.metrics.length > 0 ? (
-                slide.metrics.map((m, i) => (
-                  <div key={i} className="bg-muted/30 p-6 rounded-xl border flex flex-col items-center justify-center text-center">
-                    <div className="text-4xl font-bold text-primary mb-2" data-testid={`text-metric-value-${i}`}>{m.value}</div>
-                    <div className="text-xs text-muted-foreground font-medium uppercase tracking-wider" data-testid={`text-metric-label-${i}`}>{m.label}</div>
+              {metricVals.length > 0 ? (
+                metricVals.map((m, i) => (
+                  <div key={i} className="bg-muted/30 p-6 rounded-xl border flex flex-col items-center justify-center text-center gap-2">
+                    {editingMetric?.idx === i && editingMetric?.field === "value" ? (
+                      <Input
+                        autoFocus
+                        data-testid={`input-metric-value-${i}`}
+                        value={m.value}
+                        onChange={e => setMetricVals(prev => prev.map((mv, j) => j === i ? { ...mv, value: e.target.value } : mv))}
+                        onBlur={() => handleSaveMetric(i, "value")}
+                        onKeyDown={e => { if (e.key === "Enter") handleSaveMetric(i, "value"); if (e.key === "Escape") { setMetricVals(slide.metrics ?? []); setEditingMetric(null); } }}
+                        className="text-4xl font-bold text-primary text-center h-auto py-1 border-dashed"
+                      />
+                    ) : (
+                      <div
+                        className="text-4xl font-bold text-primary cursor-pointer hover:bg-black/5 px-2 py-1 rounded transition-colors"
+                        data-testid={`text-metric-value-${i}`}
+                        onClick={() => setEditingMetric({ idx: i, field: "value" })}
+                      >
+                        {m.value}
+                      </div>
+                    )}
+                    {editingMetric?.idx === i && editingMetric?.field === "label" ? (
+                      <Input
+                        autoFocus
+                        data-testid={`input-metric-label-${i}`}
+                        value={m.label}
+                        onChange={e => setMetricVals(prev => prev.map((mv, j) => j === i ? { ...mv, label: e.target.value } : mv))}
+                        onBlur={() => handleSaveMetric(i, "label")}
+                        onKeyDown={e => { if (e.key === "Enter") handleSaveMetric(i, "label"); if (e.key === "Escape") { setMetricVals(slide.metrics ?? []); setEditingMetric(null); } }}
+                        className="text-xs uppercase tracking-wider text-center h-auto py-1 border-dashed"
+                      />
+                    ) : (
+                      <div
+                        className="text-xs text-muted-foreground font-medium uppercase tracking-wider cursor-pointer hover:bg-black/5 px-2 py-1 rounded transition-colors"
+                        data-testid={`text-metric-label-${i}`}
+                        onClick={() => setEditingMetric({ idx: i, field: "label" })}
+                      >
+                        {m.label}
+                      </div>
+                    )}
                   </div>
                 ))
               ) : (
@@ -347,10 +418,30 @@ function SlideCanvas({ deckId, slide }: { deckId: string; slide: Slide }) {
             <EditableTitle className="text-2xl font-serif font-bold mb-6 pb-4 border-b" />
             <div className="flex-1 flex flex-col gap-4">
               <EditableBody className="text-base" rows={4} />
-              {!isEditingBody && slide.bulletPoints && slide.bulletPoints.length > 0 && (
+              {!isEditingBody && bulletVals.length > 0 && (
                 <ul className="space-y-2 list-disc pl-5 text-sm">
-                  {slide.bulletPoints.map((bp, i) => (
-                    <li key={i} data-testid={`text-bullet-${i}`}>{bp}</li>
+                  {bulletVals.map((bp, i) => (
+                    <li key={i}>
+                      {editingBulletIdx === i ? (
+                        <Input
+                          autoFocus
+                          data-testid={`input-bullet-${i}`}
+                          value={bp}
+                          onChange={e => setBulletVals(prev => prev.map((v, j) => j === i ? e.target.value : v))}
+                          onBlur={() => handleSaveBullet(i)}
+                          onKeyDown={e => { if (e.key === "Enter") handleSaveBullet(i); if (e.key === "Escape") { setBulletVals(slide.bulletPoints ?? []); setEditingBulletIdx(null); } }}
+                          className="h-7 text-sm border-dashed"
+                        />
+                      ) : (
+                        <span
+                          data-testid={`text-bullet-${i}`}
+                          className="cursor-pointer hover:bg-black/5 px-1 rounded transition-colors"
+                          onClick={() => setEditingBulletIdx(i)}
+                        >
+                          {bp}
+                        </span>
+                      )}
+                    </li>
                   ))}
                 </ul>
               )}
