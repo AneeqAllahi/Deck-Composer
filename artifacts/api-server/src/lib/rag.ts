@@ -24,10 +24,12 @@ export async function retrieveRelevantChunks(query: string, topK = 10, projectId
         `);
       } else {
         results = await db.execute(sql`
-          SELECT chunk_text
-          FROM corpus_chunks
-          WHERE embedding IS NOT NULL
-          ORDER BY embedding <=> ${embeddingLiteral}::vector
+          SELECT cc.chunk_text
+          FROM corpus_chunks cc
+          JOIN corpus_documents cd ON cc.document_id = cd.id
+          WHERE cc.embedding IS NOT NULL
+            AND cd.project_id IS NULL
+          ORDER BY cc.embedding <=> ${embeddingLiteral}::vector
           LIMIT ${topK}
         `);
       }
@@ -60,9 +62,11 @@ export async function retrieveRelevantChunks(query: string, topK = 10, projectId
       `);
     } else {
       fallback = await db.execute(sql`
-        SELECT chunk_text
-        FROM corpus_chunks
-        WHERE chunk_text ILIKE ${likePattern}
+        SELECT cc.chunk_text
+        FROM corpus_chunks cc
+        JOIN corpus_documents cd ON cc.document_id = cd.id
+        WHERE cc.chunk_text ILIKE ${likePattern}
+          AND cd.project_id IS NULL
         LIMIT ${topK}
       `);
     }

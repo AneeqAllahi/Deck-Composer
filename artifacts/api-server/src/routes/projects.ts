@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { projectsTable, corpusDocumentsTable, decksTable } from "@workspace/db";
-import { eq, desc } from "drizzle-orm";
+import { projectsTable, corpusDocumentsTable, corpusChunksTable, decksTable } from "@workspace/db";
+import { eq, desc, inArray } from "drizzle-orm";
 import { generateId } from "../lib/rag.js";
 import { ObjectStorageService } from "../lib/objectStorage.js";
 
@@ -109,8 +109,17 @@ router.delete("/projects/:id", async (req, res) => {
     const rows = await db.select().from(projectsTable).where(eq(projectsTable.id, req.params.id));
     if (rows.length === 0) return res.status(404).json({ error: "Project not found" });
 
+    const projectDocs = await db.select({ id: corpusDocumentsTable.id })
+      .from(corpusDocumentsTable)
+      .where(eq(corpusDocumentsTable.projectId, req.params.id));
+
+    if (projectDocs.length > 0) {
+      const docIds = projectDocs.map((d) => d.id);
+      await db.delete(corpusChunksTable).where(inArray(corpusChunksTable.documentId, docIds));
+      await db.delete(corpusDocumentsTable).where(eq(corpusDocumentsTable.projectId, req.params.id));
+    }
+
     await db.update(decksTable).set({ projectId: null }).where(eq(decksTable.projectId, req.params.id));
-    await db.delete(corpusDocumentsTable).where(eq(corpusDocumentsTable.projectId, req.params.id));
     await db.delete(projectsTable).where(eq(projectsTable.id, req.params.id));
 
     return res.status(204).send();

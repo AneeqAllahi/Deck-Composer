@@ -38,20 +38,22 @@ const createProjectSchema = z.object({
   description: z.string().max(300).optional(),
 });
 
-const brandSchema = z.object({
+const projectSettingsSchema = z.object({
+  name: z.string().min(1, "Name is required").max(80),
+  description: z.string().max(300).optional(),
   primaryColor: z.string().regex(/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/, "Must be a valid hex color code"),
   secondaryColor: z.string().regex(/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/, "Must be a valid hex color code"),
   accentColor: z.string().regex(/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/, "Must be a valid hex color code"),
   headingFont: z.string().min(1, "Heading font is required"),
   bodyFont: z.string().min(1, "Body font is required"),
   density: z.enum(["spacious", "balanced", "dense"]),
-  description: z.string().max(300).optional(),
 });
 
 type CreateProjectValues = z.infer<typeof createProjectSchema>;
-type BrandValues = z.infer<typeof brandSchema>;
+type ProjectSettingsValues = z.infer<typeof projectSettingsSchema>;
 
-function ProjectList({ onSelect }: { onSelect: (id: string) => void }) {
+export function ProjectsPage() {
+  const [, setLocation] = useLocation();
   const { data: projects, isLoading } = useListProjects();
   const createProject = useCreateProject();
   const deleteProject = useDeleteProject();
@@ -71,7 +73,7 @@ function ProjectList({ onSelect }: { onSelect: (id: string) => void }) {
       toast({ title: `Project "${project.name}" created` });
       setOpen(false);
       form.reset();
-      onSelect(project.id);
+      setLocation(`/projects/${project.id}`);
     } catch {
       toast({ title: "Failed to create project", variant: "destructive" });
     }
@@ -166,11 +168,11 @@ function ProjectList({ onSelect }: { onSelect: (id: string) => void }) {
           </Card>
         ) : (
           <div className="grid gap-3">
-            {projects.map((project) => (
+            {(projects as { id: string; name: string; description: string; primaryColor: string; createdAt: string }[]).map((project) => (
               <Card
                 key={project.id}
                 className="cursor-pointer hover:shadow-md transition-shadow"
-                onClick={() => onSelect(project.id)}
+                onClick={() => setLocation(`/projects/${project.id}`)}
               >
                 <CardContent className="flex items-center justify-between p-4">
                   <div className="flex items-center gap-4">
@@ -206,7 +208,9 @@ function ProjectList({ onSelect }: { onSelect: (id: string) => void }) {
   );
 }
 
-function ProjectDetail({ projectId, onBack }: { projectId: string; onBack: () => void }) {
+export function ProjectDetailPage({ params }: { params: { id: string } }) {
+  const projectId = params.id;
+  const [, setLocation] = useLocation();
   const { data: project, isLoading: projectLoading } = useGetProject(projectId);
   const updateProject = useUpdateProject();
   const updateLogo = useUpdateProjectLogo();
@@ -216,21 +220,32 @@ function ProjectDetail({ projectId, onBack }: { projectId: string; onBack: () =>
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  const form = useForm<BrandValues>({
-    resolver: zodResolver(brandSchema),
+  const form = useForm<ProjectSettingsValues>({
+    resolver: zodResolver(projectSettingsSchema),
+    defaultValues: {
+      name: "",
+      description: "",
+      primaryColor: "#1E293B",
+      secondaryColor: "#334155",
+      accentColor: "#3B82F6",
+      headingFont: "Inter",
+      bodyFont: "Inter",
+      density: "balanced",
+    },
     values: project ? {
+      name: project.name,
+      description: project.description,
       primaryColor: project.primaryColor,
       secondaryColor: project.secondaryColor,
       accentColor: project.accentColor,
       headingFont: project.headingFont,
       bodyFont: project.bodyFont,
       density: project.density as "spacious" | "balanced" | "dense",
-      description: project.description,
     } : undefined,
   });
 
   const { uploadFile, isUploading } = useUpload({
-    onSuccess: (response) => {
+    onSuccess: (response: { objectPath: string }) => {
       updateLogo.mutate(
         { id: projectId, data: { objectPath: response.objectPath } },
         {
@@ -245,7 +260,7 @@ function ProjectDetail({ projectId, onBack }: { projectId: string; onBack: () =>
     onError: () => toast({ title: "Logo upload failed", variant: "destructive" }),
   });
 
-  const onSubmit = async (data: BrandValues) => {
+  const onSubmit = async (data: ProjectSettingsValues) => {
     try {
       await updateProject.mutateAsync({ id: projectId, data });
       queryClient.invalidateQueries({ queryKey: getGetProjectQueryKey(projectId) });
@@ -293,15 +308,24 @@ function ProjectDetail({ projectId, onBack }: { projectId: string; onBack: () =>
     );
   }
 
-  if (!project) return null;
+  if (!project) {
+    return (
+      <div className="flex-1 p-8 flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-muted-foreground mb-4">Project not found.</p>
+          <Button onClick={() => setLocation("/projects")}>Back to Projects</Button>
+        </div>
+      </div>
+    );
+  }
 
-  const projectDocs = documents?.filter((d) => d.projectId === projectId) ?? [];
+  const projectDocs = (documents as { id: string; filename: string; fileType: string; chunkCount: number; status: string; projectId?: string | null; createdAt: string }[] | undefined) ?? [];
 
   return (
     <div className="flex-1 p-8 overflow-auto bg-gray-50/50">
       <div className="max-w-4xl mx-auto space-y-8">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="sm" onClick={onBack} className="gap-2">
+          <Button variant="ghost" size="sm" onClick={() => setLocation("/projects")} className="gap-2">
             <ArrowLeft className="h-4 w-4" />
             All Projects
           </Button>
@@ -315,25 +339,40 @@ function ProjectDetail({ projectId, onBack }: { projectId: string; onBack: () =>
           <div className="md:col-span-2 space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>Brand Settings</CardTitle>
-                <CardDescription>Colors, fonts, and content density for decks in this project.</CardDescription>
+                <CardTitle>Project Settings</CardTitle>
+                <CardDescription>Name, description, brand colors, fonts, and content density.</CardDescription>
               </CardHeader>
               <CardContent>
                 <Form {...form}>
                   <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-                    <FormField
-                      control={form.control}
-                      name="description"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Description</FormLabel>
-                          <FormControl>
-                            <Textarea placeholder="Brief note about this client or engagement..." rows={2} {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
+                    <div className="grid grid-cols-1 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="name"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Project Name</FormLabel>
+                            <FormControl>
+                              <Input placeholder="e.g. Acme Corp — Q4 Strategy" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="description"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Description <span className="text-muted-foreground font-normal">(optional)</span></FormLabel>
+                            <FormControl>
+                              <Textarea placeholder="Brief note about this client or engagement..." rows={2} {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
 
                     <div className="grid grid-cols-2 gap-6">
                       <FormField
@@ -497,7 +536,13 @@ function ProjectDetail({ projectId, onBack }: { projectId: string; onBack: () =>
                   )}
                 </div>
                 <div className="w-full">
-                  <Input type="file" accept="image/*" onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadFile(f); }} disabled={isUploading} className="cursor-pointer" />
+                  <Input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadFile(f); }}
+                    disabled={isUploading}
+                    className="cursor-pointer"
+                  />
                   {isUploading && <p className="text-sm text-center mt-2 text-muted-foreground">Uploading...</p>}
                 </div>
               </CardContent>
@@ -507,13 +552,4 @@ function ProjectDetail({ projectId, onBack }: { projectId: string; onBack: () =>
       </div>
     </div>
   );
-}
-
-export function ProjectsPage() {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-
-  if (selectedId) {
-    return <ProjectDetail projectId={selectedId} onBack={() => setSelectedId(null)} />;
-  }
-  return <ProjectList onSelect={(id) => setSelectedId(id)} />;
 }
