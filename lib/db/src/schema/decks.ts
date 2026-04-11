@@ -1,6 +1,21 @@
-import { pgTable, text, timestamp, integer, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, integer, jsonb, customType } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+
+const vector = customType<{ data: number[]; driverData: string; config: { dimensions: number } }>({
+  dataType(config) {
+    return `vector(${config?.dimensions ?? 1536})`;
+  },
+  toDriver(value: number[]): string {
+    return `[${value.join(",")}]`;
+  },
+  fromDriver(value: string): number[] {
+    return value
+      .replace(/^\[|\]$/g, "")
+      .split(",")
+      .map(Number);
+  },
+});
 
 export const SlideSchema = z.object({
   slideIndex: z.number(),
@@ -44,6 +59,7 @@ export const corpusChunksTable = pgTable("corpus_chunks", {
   id: text("id").primaryKey(),
   documentId: text("document_id").notNull().references(() => corpusDocumentsTable.id, { onDelete: "cascade" }),
   chunkText: text("chunk_text").notNull(),
+  embedding: vector("embedding", { dimensions: 1536 }),
   slideIndex: integer("slide_index"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
