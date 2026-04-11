@@ -70,12 +70,31 @@ Six layout types: `title`, `section`, `text`, `columns`, `quote`, `metrics`
 
 ## Key Technical Notes
 
-- RAG uses PostgreSQL full-text search (tsvector/tsquery), NOT vector embeddings
+- RAG uses pgvector for semantic similarity search with fallback to ILIKE text search
+- pgvector extension must be enabled in PostgreSQL before schema push
+- Embeddings API uses the Replit AI integrations base URL; falls back gracefully if unavailable
 - PPTX corpus ingestion: adm-zip unzips PPTX → fast-xml-parser extracts slide text
 - Export: pptxgenjs; supports all 6 layout types with brand styling
 - PPTX export endpoint returns binary — frontend uses `<a href="/api/decks/${id}/export" download>`
 - Corpus upload is async (processing happens in background after API responds)
 - OpenAI model: gpt-5.2, max_completion_tokens: 8192
+- AI integration: Replit OpenAI AI integration (AI_INTEGRATIONS_OPENAI_BASE_URL + AI_INTEGRATIONS_OPENAI_API_KEY)
+
+## Environment Variables
+
+- `DATABASE_URL` — PostgreSQL connection (Replit-provisioned)
+- `AI_INTEGRATIONS_OPENAI_BASE_URL` — Replit AI integration proxy base URL
+- `AI_INTEGRATIONS_OPENAI_API_KEY` — Replit AI integration proxy key
+- `GCS_BUCKET` / Google credentials — For object storage (logo upload)
+
+## Running the App
+
+```bash
+pnpm install
+# Enable pgvector (once): CREATE EXTENSION IF NOT EXISTS vector;
+pnpm --filter @workspace/db run push
+# Workflow: PORT=8080 api-server dev & PORT=22135 deckai dev
+```
 
 ## Dependencies
 

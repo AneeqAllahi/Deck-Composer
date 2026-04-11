@@ -7,18 +7,21 @@ export async function retrieveRelevantChunks(query: string, topK = 10): Promise<
 
   try {
     const queryEmbedding = await generateEmbedding(query);
-    const embeddingLiteral = `[${queryEmbedding.join(",")}]`;
 
-    const results = await db.execute(sql`
-      SELECT chunk_text
-      FROM corpus_chunks
-      WHERE embedding IS NOT NULL
-      ORDER BY embedding <=> ${embeddingLiteral}::vector
-      LIMIT ${topK}
-    `);
+    if (queryEmbedding !== null) {
+      const embeddingLiteral = `[${queryEmbedding.join(",")}]`;
 
-    if ((results.rows as unknown[]).length > 0) {
-      return (results.rows as { chunk_text: string }[]).map((r) => r.chunk_text);
+      const results = await db.execute(sql`
+        SELECT chunk_text
+        FROM corpus_chunks
+        WHERE embedding IS NOT NULL
+        ORDER BY embedding <=> ${embeddingLiteral}::vector
+        LIMIT ${topK}
+      `);
+
+      if ((results.rows as unknown[]).length > 0) {
+        return (results.rows as { chunk_text: string }[]).map((r) => r.chunk_text);
+      }
     }
 
     const searchTerms = query
