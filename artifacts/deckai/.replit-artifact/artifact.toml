@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "DeckAI"
+version = "1.0.0"
+id = "artifacts/deckai"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 22135
+
+[services.development]
+run = "pnpm --filter @workspace/deckai run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/deckai", "run", "build" ]
+publicDir = "artifacts/deckai/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "22135"
+BASE_PATH = "/"

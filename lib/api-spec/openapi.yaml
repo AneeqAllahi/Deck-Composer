@@ -3,13 +3,21 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: DeckAI API specification
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: brand
+    description: Brand profile management
+  - name: decks
+    description: Deck management
+  - name: corpus
+    description: RAG corpus management
+  - name: storage
+    description: File upload and serving
 paths:
   /healthz:
     get:
@@ -24,6 +32,310 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /brand-profile:
+    get:
+      operationId: getBrandProfile
+      tags: [brand]
+      summary: Get brand profile
+      description: Returns the current brand profile configuration
+      responses:
+        "200":
+          description: Brand profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BrandProfile"
+    put:
+      operationId: updateBrandProfile
+      tags: [brand]
+      summary: Update brand profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateBrandProfileBody"
+      responses:
+        "200":
+          description: Updated brand profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BrandProfile"
+
+  /decks:
+    get:
+      operationId: listDecks
+      tags: [decks]
+      summary: List all decks
+      responses:
+        "200":
+          description: List of decks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DeckSummary"
+
+  /decks/generate:
+    post:
+      operationId: generateDeck
+      tags: [decks]
+      summary: Generate a new deck from a brief
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerateDeckBody"
+      responses:
+        "201":
+          description: Generated deck
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Deck"
+
+  /decks/stats:
+    get:
+      operationId: getDeckStats
+      tags: [decks]
+      summary: Get overall stats
+      description: Returns total decks, corpus documents, and slides generated
+      responses:
+        "200":
+          description: Stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeckStats"
+
+  /decks/{id}:
+    get:
+      operationId: getDeck
+      tags: [decks]
+      summary: Get a specific deck
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deck
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Deck"
+        "404":
+          description: Deck not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    delete:
+      operationId: deleteDeck
+      tags: [decks]
+      summary: Delete a deck
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted successfully
+
+  /decks/{id}/slides/{slideIndex}:
+    put:
+      operationId: updateSlide
+      tags: [decks]
+      summary: Update a slide inline
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: slideIndex
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSlideBody"
+      responses:
+        "200":
+          description: Updated deck
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Deck"
+        "404":
+          description: Deck not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /decks/{id}/slides/{slideIndex}/regenerate:
+    post:
+      operationId: regenerateSlide
+      tags: [decks]
+      summary: Regenerate a single slide
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: slideIndex
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegenerateSlideBody"
+      responses:
+        "200":
+          description: Updated deck with regenerated slide
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Deck"
+        "404":
+          description: Deck not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /decks/{id}/export:
+    get:
+      operationId: exportDeck
+      tags: [decks]
+      summary: Export deck as PPTX
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: PPTX binary file
+          content:
+            application/vnd.openxmlformats-officedocument.presentationml.presentation:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Deck not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /corpus:
+    get:
+      operationId: listCorpusDocuments
+      tags: [corpus]
+      summary: List all corpus documents
+      responses:
+        "200":
+          description: List of corpus documents
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CorpusDocument"
+
+  /corpus/upload:
+    post:
+      operationId: uploadCorpusDocument
+      tags: [corpus]
+      summary: Upload a PDF or PPTX to the corpus
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+              required:
+                - file
+      responses:
+        "201":
+          description: Uploaded corpus document
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CorpusDocument"
+
+  /corpus/{id}:
+    delete:
+      operationId: deleteCorpusDocument
+      tags: [corpus]
+      summary: Delete a corpus document
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted successfully
+
+  /storage/uploads/request-url:
+    post:
+      operationId: requestUploadUrl
+      tags: [storage]
+      summary: Request a presigned upload URL
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RequestUploadUrlBody"
+      responses:
+        "200":
+          description: Presigned URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RequestUploadUrlResponse"
+
+  /storage/objects/{objectPath}:
+    get:
+      operationId: getStorageObject
+      tags: [storage]
+      summary: Serve a stored object
+      parameters:
+        - name: objectPath
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Object content
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +346,292 @@ components:
       required:
         - status
 
+    ApiError:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+
+    BrandProfile:
+      type: object
+      properties:
+        id:
+          type: string
+        primaryColor:
+          type: string
+          description: Hex color code e.g. #1a2b3c
+        secondaryColor:
+          type: string
+        accentColor:
+          type: string
+        headingFont:
+          type: string
+        bodyFont:
+          type: string
+        logoObjectPath:
+          type: string
+          nullable: true
+        density:
+          type: string
+          enum: [spacious, balanced, dense]
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - primaryColor
+        - secondaryColor
+        - accentColor
+        - headingFont
+        - bodyFont
+        - density
+        - updatedAt
+
+    UpdateBrandProfileBody:
+      type: object
+      properties:
+        primaryColor:
+          type: string
+        secondaryColor:
+          type: string
+        accentColor:
+          type: string
+        headingFont:
+          type: string
+        bodyFont:
+          type: string
+        logoObjectPath:
+          type: string
+          nullable: true
+        density:
+          type: string
+          enum: [spacious, balanced, dense]
+
+    Slide:
+      type: object
+      properties:
+        slideIndex:
+          type: integer
+        title:
+          type: string
+        body:
+          type: string
+          description: Markdown body content
+        layoutType:
+          type: string
+          enum: [title, section, text, columns, quote, metrics]
+        speakerNotes:
+          type: string
+        bulletPoints:
+          type: array
+          items:
+            type: string
+        metrics:
+          type: array
+          items:
+            $ref: "#/components/schemas/SlideMetric"
+        columnLeft:
+          type: string
+          nullable: true
+        columnRight:
+          type: string
+          nullable: true
+      required:
+        - slideIndex
+        - title
+        - body
+        - layoutType
+        - speakerNotes
+
+    SlideMetric:
+      type: object
+      properties:
+        value:
+          type: string
+        label:
+          type: string
+      required:
+        - value
+        - label
+
+    Deck:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        brief:
+          type: string
+        audience:
+          type: string
+        narrativeStructure:
+          type: string
+          enum: [problem-solution, consulting, chronological, mece-pyramid, executive-summary, custom]
+        slides:
+          type: array
+          items:
+            $ref: "#/components/schemas/Slide"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - title
+        - brief
+        - audience
+        - narrativeStructure
+        - slides
+        - createdAt
+        - updatedAt
+
+    DeckSummary:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        brief:
+          type: string
+        slideCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - title
+        - brief
+        - slideCount
+        - createdAt
+
+    GenerateDeckBody:
+      type: object
+      properties:
+        title:
+          type: string
+        brief:
+          type: string
+        audience:
+          type: string
+        slideCount:
+          type: integer
+          minimum: 3
+          maximum: 30
+        narrativeStructure:
+          type: string
+          enum: [problem-solution, consulting, chronological, mece-pyramid, executive-summary, custom]
+      required:
+        - title
+        - brief
+        - audience
+        - slideCount
+        - narrativeStructure
+
+    UpdateSlideBody:
+      type: object
+      properties:
+        title:
+          type: string
+        body:
+          type: string
+        bulletPoints:
+          type: array
+          items:
+            type: string
+        speakerNotes:
+          type: string
+        layoutType:
+          type: string
+          enum: [title, section, text, columns, quote, metrics]
+        metrics:
+          type: array
+          items:
+            $ref: "#/components/schemas/SlideMetric"
+        columnLeft:
+          type: string
+          nullable: true
+        columnRight:
+          type: string
+          nullable: true
+
+    RegenerateSlideBody:
+      type: object
+      properties:
+        instruction:
+          type: string
+          description: Optional instruction for how to regenerate the slide
+
+    DeckStats:
+      type: object
+      properties:
+        totalDecks:
+          type: integer
+        totalCorpusDocuments:
+          type: integer
+        totalSlidesGenerated:
+          type: integer
+        totalChunks:
+          type: integer
+      required:
+        - totalDecks
+        - totalCorpusDocuments
+        - totalSlidesGenerated
+        - totalChunks
+
+    CorpusDocument:
+      type: object
+      properties:
+        id:
+          type: string
+        filename:
+          type: string
+        fileType:
+          type: string
+          enum: [pdf, pptx]
+        chunkCount:
+          type: integer
+        status:
+          type: string
+          enum: [processing, ready, error]
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - filename
+        - fileType
+        - chunkCount
+        - status
+        - createdAt
+
+    RequestUploadUrlBody:
+      type: object
+      properties:
+        name:
+          type: string
+        size:
+          type: integer
+        contentType:
+          type: string
+      required:
+        - name
+        - size
+        - contentType
+
+    RequestUploadUrlResponse:
+      type: object
+      properties:
+        uploadURL:
+          type: string
+        objectPath:
+          type: string
+      required:
+        - uploadURL
+        - objectPath
