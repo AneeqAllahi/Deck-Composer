@@ -2,6 +2,7 @@ import { useListDecks, useGetDeckStats, useDeleteDeck, getListDecksQueryKey, get
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { format } from "date-fns";
+import type { LucideIcon } from "lucide-react";
 import { PlusCircle, FileText, BarChart3, Database, Trash2, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
@@ -117,7 +118,7 @@ export function HomePage() {
   );
 }
 
-function StatsCard({ title, value, icon: Icon, loading }: { title: string, value?: number, icon: any, loading: boolean }) {
+function StatsCard({ title, value, icon: Icon, loading }: { title: string; value?: number; icon: LucideIcon; loading: boolean }) {
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">

@@ -79,4 +79,38 @@ router.put("/brand-profile", async (req, res) => {
   }
 });
 
+
+const DEFAULT_BRAND_PROFILE = {
+  primaryColor: "#1E293B",
+  secondaryColor: "#334155",
+  accentColor: "#3B82F6",
+  headingFont: "Inter",
+  bodyFont: "Inter",
+  logoObjectPath: null,
+  density: "balanced",
+} as const;
+
+router.delete("/brand-profile", async (req, res) => {
+  try {
+    const reset = await db
+      .update(brandProfileTable)
+      .set({ ...DEFAULT_BRAND_PROFILE, updatedAt: new Date() })
+      .where(eq(brandProfileTable.id, "default"))
+      .returning();
+
+    if (reset.length === 0) {
+      const created = await db
+        .insert(brandProfileTable)
+        .values({ id: "default", ...DEFAULT_BRAND_PROFILE })
+        .returning();
+      return res.json(created[0]);
+    }
+
+    return res.json(reset[0]);
+  } catch (err) {
+    req.log.error({ err }, "Failed to reset brand profile");
+    return res.status(500).json({ error: "Failed to reset brand profile" });
+  }
+});
+
 export default router;
