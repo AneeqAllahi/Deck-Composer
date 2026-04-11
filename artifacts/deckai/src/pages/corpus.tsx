@@ -91,7 +91,7 @@ export function CorpusPage() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={ALL_PROJECTS}>All documents (global corpus)</SelectItem>
+              <SelectItem value={ALL_PROJECTS}>All documents (view only — generation uses project scope)</SelectItem>
               {projects?.map((p) => (
                 <SelectItem key={p.id} value={p.id}>
                   {p.name}
