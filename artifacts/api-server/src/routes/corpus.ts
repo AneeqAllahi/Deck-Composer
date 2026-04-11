@@ -2,8 +2,9 @@ import { Router } from "express";
 import multer from "multer";
 import { db } from "@workspace/db";
 import { corpusDocumentsTable, corpusChunksTable } from "@workspace/db";
-import { eq, and, isNull } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { chunkText, generateId } from "../lib/rag.js";
+import { logger } from "../lib/logger.js";
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
@@ -147,6 +148,8 @@ router.post("/corpus/upload", upload.single("file"), async (req, res) => {
         chunks = result.chunks;
       }
 
+      logger.info({ docId, chunkCount: chunks.length, fileType }, "Corpus document text extracted");
+
       if (chunks.length > 0) {
         const { generateEmbeddingsBatch } = await import("../lib/embeddings.js");
         const INGEST_BATCH = 20;
@@ -157,7 +160,7 @@ router.post("/corpus/upload", upload.single("file"), async (req, res) => {
             id: generateId(),
             documentId: docId,
             chunkText: text,
-            embedding: embeddings[j],
+            embedding: embeddings[j] ?? undefined,
           }));
           await db.insert(corpusChunksTable).values(rows);
         }
@@ -166,11 +169,17 @@ router.post("/corpus/upload", upload.single("file"), async (req, res) => {
       await db.update(corpusDocumentsTable)
         .set({ chunkCount: chunks.length, status: "ready" })
         .where(eq(corpusDocumentsTable.id, docId));
+
+      logger.info({ docId, chunkCount: chunks.length }, "Corpus document processed successfully");
     } catch (err) {
-      console.error("Corpus processing error:", err);
-      await db.update(corpusDocumentsTable)
-        .set({ status: "error" })
-        .where(eq(corpusDocumentsTable.id, docId));
+      logger.error({ err, docId, fileType }, "Corpus document processing failed");
+      try {
+        await db.update(corpusDocumentsTable)
+          .set({ status: "error" })
+          .where(eq(corpusDocumentsTable.id, docId));
+      } catch (dbErr) {
+        logger.error({ err: dbErr, docId }, "Failed to update corpus document status to error");
+      }
     }
   });
 });
