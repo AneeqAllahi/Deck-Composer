@@ -1,6 +1,7 @@
 import { pgTable, text, timestamp, integer, jsonb, customType } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import { projectsTable } from "./projects";
 
 const vector = customType<{ data: number[]; driverData: string; config: { dimensions: number } }>({
   dataType(config) {
@@ -38,7 +39,7 @@ export const decksTable = pgTable("decks", {
   audience: text("audience").notNull(),
   narrativeStructure: text("narrative_structure").notNull(),
   slides: jsonb("slides").notNull().$type<SlideData[]>(),
-  projectId: text("project_id"),
+  projectId: text("project_id").references(() => projectsTable.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -53,7 +54,7 @@ export const corpusDocumentsTable = pgTable("corpus_documents", {
   fileType: text("file_type").notNull(),
   chunkCount: integer("chunk_count").notNull().default(0),
   status: text("status").notNull().default("processing"),
-  projectId: text("project_id"),
+  projectId: text("project_id").references(() => projectsTable.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
