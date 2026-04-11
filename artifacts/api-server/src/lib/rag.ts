@@ -1,38 +1,46 @@
 import { db } from "@workspace/db";
 import { corpusChunksTable } from "@workspace/db";
 import { sql } from "drizzle-orm";
-import { openai } from "@workspace/integrations-openai-ai-server";
-
-const EMBEDDING_MODEL = "text-embedding-3-small";
-const EMBEDDING_DIMENSIONS = 1536;
-
-export async function generateEmbedding(text: string): Promise<number[]> {
-  const response = await openai.embeddings.create({
-    model: EMBEDDING_MODEL,
-    input: text.slice(0, 8192),
-    dimensions: EMBEDDING_DIMENSIONS,
-  });
-  return response.data[0].embedding;
-}
 
 export async function retrieveRelevantChunks(query: string, topK = 10): Promise<string[]> {
   if (!query.trim()) return [];
 
   try {
-    const queryEmbedding = await generateEmbedding(query);
-    const embeddingStr = `[${queryEmbedding.join(",")}]`;
+    const searchTerms = query
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .trim()
+      .split(/\s+/)
+      .filter((t) => t.length > 2)
+      .slice(0, 20);
+
+    if (searchTerms.length === 0) return [];
+
+    const tsqueryStr = searchTerms.join(" | ");
 
     const results = await db.execute(sql`
-      SELECT chunk_text
+      SELECT chunk_text,
+             ts_rank(to_tsvector('english', chunk_text), to_tsquery('english', ${tsqueryStr})) AS rank
       FROM corpus_chunks
-      WHERE embedding IS NOT NULL
-      ORDER BY embedding <=> ${embeddingStr}::vector
+      WHERE to_tsvector('english', chunk_text) @@ to_tsquery('english', ${tsqueryStr})
+      ORDER BY rank DESC
       LIMIT ${topK}
     `);
 
-    return (results.rows as { chunk_text: string }[]).map((r) => r.chunk_text);
+    if ((results.rows as unknown[]).length > 0) {
+      return (results.rows as { chunk_text: string }[]).map((r) => r.chunk_text);
+    }
+
+    const likePattern = `%${searchTerms.join("%")}%`;
+    const fallback = await db.execute(sql`
+      SELECT chunk_text
+      FROM corpus_chunks
+      WHERE chunk_text ILIKE ${likePattern}
+      LIMIT ${topK}
+    `);
+    return (fallback.rows as { chunk_text: string }[]).map((r) => r.chunk_text);
   } catch (err) {
-    console.error("RAG vector retrieval error:", err);
+    console.error("RAG retrieval error:", err);
     return [];
   }
 }

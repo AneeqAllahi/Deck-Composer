@@ -3,7 +3,7 @@ import multer from "multer";
 import { db } from "@workspace/db";
 import { corpusDocumentsTable, corpusChunksTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import { chunkText, generateId, generateEmbedding } from "../lib/rag.js";
+import { chunkText, generateId } from "../lib/rag.js";
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
@@ -133,17 +133,13 @@ router.post("/corpus/upload", upload.single("file"), async (req, res) => {
       }
 
       if (chunks.length > 0) {
-        const EMBED_BATCH = 10;
-        for (let i = 0; i < chunks.length; i += EMBED_BATCH) {
-          const batch = chunks.slice(i, i + EMBED_BATCH);
-          const embeddings = await Promise.all(batch.map((text) => generateEmbedding(text)));
-          const rows = batch.map((text, j) => ({
-            id: generateId(),
-            documentId: docId,
-            chunkText: text,
-            embedding: embeddings[j],
-          }));
-          await db.insert(corpusChunksTable).values(rows);
+        const rows = chunks.map((text) => ({
+          id: generateId(),
+          documentId: docId,
+          chunkText: text,
+        }));
+        for (let i = 0; i < rows.length; i += 50) {
+          await db.insert(corpusChunksTable).values(rows.slice(i, i + 50));
         }
       }
 
