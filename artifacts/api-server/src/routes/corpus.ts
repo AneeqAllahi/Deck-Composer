@@ -87,7 +87,8 @@ router.get("/corpus", async (req, res) => {
 
 router.post("/corpus/upload", upload.single("file"), async (req, res) => {
   if (!req.file) {
-    return res.status(400).json({ error: "No file uploaded" });
+    res.status(400).json({ error: "No file uploaded" });
+    return;
   }
 
   const { originalname, buffer, mimetype } = req.file;
@@ -96,7 +97,8 @@ router.post("/corpus/upload", upload.single("file"), async (req, res) => {
     originalname.toLowerCase().endsWith(".pptx");
 
   if (!isPdf && !isPptx) {
-    return res.status(400).json({ error: "Only PDF and PPTX files are supported" });
+    res.status(400).json({ error: "Only PDF and PPTX files are supported" });
+    return;
   }
 
   const docId = generateId();
@@ -119,7 +121,7 @@ router.post("/corpus/upload", upload.single("file"), async (req, res) => {
     createdAt: doc[0].createdAt,
   });
 
-  setImmediate(async () => {
+  void setImmediate(async () => {
     try {
       let chunks: string[];
 
