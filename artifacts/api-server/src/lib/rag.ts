@@ -2,7 +2,7 @@ import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { generateEmbedding } from "./embeddings.js";
 
-export async function retrieveRelevantChunks(query: string, topK = 10): Promise<string[]> {
+export async function retrieveRelevantChunks(query: string, topK = 10, projectId?: string | null): Promise<string[]> {
   if (!query.trim()) return [];
 
   try {
@@ -11,13 +11,26 @@ export async function retrieveRelevantChunks(query: string, topK = 10): Promise<
     if (queryEmbedding !== null) {
       const embeddingLiteral = `[${queryEmbedding.join(",")}]`;
 
-      const results = await db.execute(sql`
-        SELECT chunk_text
-        FROM corpus_chunks
-        WHERE embedding IS NOT NULL
-        ORDER BY embedding <=> ${embeddingLiteral}::vector
-        LIMIT ${topK}
-      `);
+      let results;
+      if (projectId) {
+        results = await db.execute(sql`
+          SELECT cc.chunk_text
+          FROM corpus_chunks cc
+          JOIN corpus_documents cd ON cc.document_id = cd.id
+          WHERE cc.embedding IS NOT NULL
+            AND cd.project_id = ${projectId}
+          ORDER BY cc.embedding <=> ${embeddingLiteral}::vector
+          LIMIT ${topK}
+        `);
+      } else {
+        results = await db.execute(sql`
+          SELECT chunk_text
+          FROM corpus_chunks
+          WHERE embedding IS NOT NULL
+          ORDER BY embedding <=> ${embeddingLiteral}::vector
+          LIMIT ${topK}
+        `);
+      }
 
       if ((results.rows as unknown[]).length > 0) {
         return (results.rows as { chunk_text: string }[]).map((r) => r.chunk_text);
@@ -35,12 +48,24 @@ export async function retrieveRelevantChunks(query: string, topK = 10): Promise<
     if (searchTerms.length === 0) return [];
     const likePattern = `%${searchTerms.join("%")}%`;
 
-    const fallback = await db.execute(sql`
-      SELECT chunk_text
-      FROM corpus_chunks
-      WHERE chunk_text ILIKE ${likePattern}
-      LIMIT ${topK}
-    `);
+    let fallback;
+    if (projectId) {
+      fallback = await db.execute(sql`
+        SELECT cc.chunk_text
+        FROM corpus_chunks cc
+        JOIN corpus_documents cd ON cc.document_id = cd.id
+        WHERE cc.chunk_text ILIKE ${likePattern}
+          AND cd.project_id = ${projectId}
+        LIMIT ${topK}
+      `);
+    } else {
+      fallback = await db.execute(sql`
+        SELECT chunk_text
+        FROM corpus_chunks
+        WHERE chunk_text ILIKE ${likePattern}
+        LIMIT ${topK}
+      `);
+    }
     return (fallback.rows as { chunk_text: string }[]).map((r) => r.chunk_text);
   } catch (err) {
     console.error("RAG retrieval error:", err);

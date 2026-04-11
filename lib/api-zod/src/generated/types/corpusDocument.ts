@@ -14,5 +14,6 @@ export interface CorpusDocument {
   fileType: CorpusDocumentFileType;
   chunkCount: number;
   status: CorpusDocumentStatus;
+  projectId?: string | null;
   createdAt: Date;
 }

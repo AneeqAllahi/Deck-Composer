@@ -2,6 +2,8 @@ import { openai } from "@workspace/integrations-openai-ai-server";
 import type { BrandProfile } from "@workspace/db";
 import type { SlideData } from "@workspace/db";
 
+export type SlideOutline = { slideIndex: number; guidance: string };
+
 function getDensityGuidance(density: string): string {
   switch (density) {
     case "spacious": return "Keep slides minimal with 2-3 key points maximum. Use generous whitespace. Prefer large impactful statements over dense content.";
@@ -29,11 +31,17 @@ export async function generateDeckSlides(params: {
   narrativeStructure: string;
   brandProfile: BrandProfile;
   corpusContext: string[];
+  slideOutlines?: SlideOutline[];
 }): Promise<SlideData[]> {
-  const { title, brief, audience, slideCount, narrativeStructure, brandProfile, corpusContext } = params;
+  const { title, brief, audience, slideCount, narrativeStructure, brandProfile, corpusContext, slideOutlines } = params;
 
   const contextSection = corpusContext.length > 0
     ? `\n\nRelevant context from past decks (use for structural and stylistic guidance):\n${corpusContext.slice(0, 8).map((c, i) => `[Context ${i + 1}]: ${c}`).join("\n\n")}`
+    : "";
+
+  const filledOutlines = (slideOutlines ?? []).filter((o) => o.guidance.trim().length > 0);
+  const slideDirectivesSection = filledOutlines.length > 0
+    ? `\n\nPer-slide directives — follow these instructions precisely for the specified slides:\n${filledOutlines.map((o) => `- Slide ${o.slideIndex + 1}: ${o.guidance}`).join("\n")}\nSlides without a directive should be generated freely to best support the deck's narrative.`
     : "";
 
   const densityGuidance = getDensityGuidance(brandProfile.density);
@@ -80,7 +88,7 @@ Output ONLY the JSON array. No explanation, no markdown, no preamble.`;
 
 Title: "${title}"
 Brief: ${brief}
-Target Audience: ${audience}${contextSection}
+Target Audience: ${audience}${contextSection}${slideDirectivesSection}
 
 Generate exactly ${slideCount} professional slides following the ${narrativeStructure} narrative structure.`;
 

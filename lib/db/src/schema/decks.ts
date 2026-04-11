@@ -38,6 +38,7 @@ export const decksTable = pgTable("decks", {
   audience: text("audience").notNull(),
   narrativeStructure: text("narrative_structure").notNull(),
   slides: jsonb("slides").notNull().$type<SlideData[]>(),
+  projectId: text("project_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -52,6 +53,7 @@ export const corpusDocumentsTable = pgTable("corpus_documents", {
   fileType: text("file_type").notNull(),
   chunkCount: integer("chunk_count").notNull().default(0),
   status: text("status").notNull().default("processing"),
+  projectId: text("project_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

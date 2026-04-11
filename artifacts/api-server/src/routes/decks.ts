@@ -1,9 +1,9 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { decksTable, corpusDocumentsTable, corpusChunksTable, brandProfileTable } from "@workspace/db";
+import { decksTable, corpusDocumentsTable, corpusChunksTable, brandProfileTable, projectsTable } from "@workspace/db";
 import { eq, count, sql, desc } from "drizzle-orm";
 import { generateId, retrieveRelevantChunks } from "../lib/rag.js";
-import { generateDeckSlides, regenerateSingleSlide } from "../lib/generation.js";
+import { generateDeckSlides, regenerateSingleSlide, type SlideOutline } from "../lib/generation.js";
 import { exportDeckToPptx } from "../lib/export.js";
 import { ObjectStorageService } from "../lib/objectStorage.js";
 import type { SlideData, BrandProfile } from "@workspace/db";
@@ -23,6 +23,27 @@ async function getOrCreateBrandProfile(): Promise<BrandProfile> {
     density: "balanced",
   }).returning();
   return created[0];
+}
+
+async function getBrandProfileForDeck(projectId?: string | null): Promise<BrandProfile> {
+  if (projectId) {
+    const projects = await db.select().from(projectsTable).where(eq(projectsTable.id, projectId));
+    if (projects.length > 0) {
+      const project = projects[0];
+      return {
+        id: project.id,
+        primaryColor: project.primaryColor,
+        secondaryColor: project.secondaryColor,
+        accentColor: project.accentColor,
+        headingFont: project.headingFont,
+        bodyFont: project.bodyFont,
+        logoObjectPath: project.logoObjectPath,
+        density: project.density,
+        updatedAt: project.updatedAt,
+      };
+    }
+  }
+  return getOrCreateBrandProfile();
 }
 
 router.get("/decks/stats", async (req, res) => {
@@ -57,6 +78,7 @@ router.get("/decks", async (req, res) => {
       title: d.title,
       brief: d.brief,
       slideCount: (d.slides as SlideData[])?.length ?? 0,
+      projectId: d.projectId,
       createdAt: d.createdAt,
     })));
   } catch (err) {
@@ -73,12 +95,14 @@ router.post("/decks/generate", async (req, res) => {
       audience: string;
       slideCount: number;
       narrativeStructure: string;
+      projectId?: string | null;
+      slideOutlines?: SlideOutline[];
     };
 
-    const brandProfile = await getOrCreateBrandProfile();
+    const brandProfile = await getBrandProfileForDeck(body.projectId);
 
     const searchQuery = `${body.title} ${body.brief} ${body.audience}`;
-    const corpusContext = await retrieveRelevantChunks(searchQuery, 10);
+    const corpusContext = await retrieveRelevantChunks(searchQuery, 10, body.projectId);
 
     const slides = await generateDeckSlides({
       title: body.title,
@@ -88,6 +112,7 @@ router.post("/decks/generate", async (req, res) => {
       narrativeStructure: body.narrativeStructure,
       brandProfile,
       corpusContext,
+      slideOutlines: body.slideOutlines,
     });
 
     const deckId = generateId();
@@ -98,6 +123,7 @@ router.post("/decks/generate", async (req, res) => {
       audience: body.audience,
       narrativeStructure: body.narrativeStructure,
       slides,
+      projectId: body.projectId ?? null,
     }).returning();
 
     return res.status(201).json(deck[0]);
@@ -184,7 +210,7 @@ router.post("/decks/:id/slides/:slideIndex/regenerate", async (req, res) => {
       return res.status(400).json({ error: "Invalid slide index" });
     }
 
-    const brandProfile = await getOrCreateBrandProfile();
+    const brandProfile = await getBrandProfileForDeck(deck.projectId);
 
     const regenerated = await regenerateSingleSlide({
       currentSlide: slides[slideIndex],
@@ -218,7 +244,7 @@ router.get("/decks/:id/export", async (req, res) => {
     if (decks.length === 0) return res.status(404).json({ error: "Deck not found" });
 
     const deck = decks[0];
-    const brandProfile = await getOrCreateBrandProfile();
+    const brandProfile = await getBrandProfileForDeck(deck.projectId);
 
     let logoBuffer: Buffer | undefined;
     if (brandProfile.logoObjectPath) {

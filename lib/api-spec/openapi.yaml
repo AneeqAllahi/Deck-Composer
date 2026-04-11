@@ -12,6 +12,8 @@ tags:
     description: Health operations
   - name: brand
     description: Brand profile management
+  - name: projects
+    description: Project management
   - name: decks
     description: Deck management
   - name: corpus
@@ -74,6 +76,141 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/BrandProfile"
+
+  /projects:
+    get:
+      operationId: listProjects
+      tags: [projects]
+      summary: List all projects
+      responses:
+        "200":
+          description: List of projects
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Project"
+    post:
+      operationId: createProject
+      tags: [projects]
+      summary: Create a new project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProjectBody"
+      responses:
+        "201":
+          description: Created project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+
+  /projects/{id}:
+    get:
+      operationId: getProject
+      tags: [projects]
+      summary: Get a specific project
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "404":
+          description: Project not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    put:
+      operationId: updateProject
+      tags: [projects]
+      summary: Update a project
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProjectBody"
+      responses:
+        "200":
+          description: Updated project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "404":
+          description: Project not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    delete:
+      operationId: deleteProject
+      tags: [projects]
+      summary: Delete a project and its corpus documents
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted successfully
+        "404":
+          description: Project not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /projects/{id}/logo:
+    post:
+      operationId: updateProjectLogo
+      tags: [projects]
+      summary: Set the logo for a project
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                objectPath:
+                  type: string
+              required:
+                - objectPath
+      responses:
+        "200":
+          description: Updated project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
 
   /decks:
     get:
@@ -262,7 +399,14 @@ paths:
     get:
       operationId: listCorpusDocuments
       tags: [corpus]
-      summary: List all corpus documents
+      summary: List corpus documents
+      parameters:
+        - name: projectId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter documents by project
       responses:
         "200":
           description: List of corpus documents
@@ -288,6 +432,9 @@ paths:
                 file:
                   type: string
                   format: binary
+                projectId:
+                  type: string
+                  description: Optional project to associate the document with
               required:
                 - file
       responses:
@@ -420,6 +567,110 @@ components:
           type: string
           enum: [spacious, balanced, dense]
 
+    Project:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        primaryColor:
+          type: string
+        secondaryColor:
+          type: string
+        accentColor:
+          type: string
+        headingFont:
+          type: string
+        bodyFont:
+          type: string
+        logoObjectPath:
+          type: string
+          nullable: true
+        density:
+          type: string
+          enum: [spacious, balanced, dense]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - description
+        - primaryColor
+        - secondaryColor
+        - accentColor
+        - headingFont
+        - bodyFont
+        - density
+        - createdAt
+        - updatedAt
+
+    CreateProjectBody:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        primaryColor:
+          type: string
+        secondaryColor:
+          type: string
+        accentColor:
+          type: string
+        headingFont:
+          type: string
+        bodyFont:
+          type: string
+        density:
+          type: string
+          enum: [spacious, balanced, dense]
+      required:
+        - name
+
+    UpdateProjectBody:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        primaryColor:
+          type: string
+        secondaryColor:
+          type: string
+        accentColor:
+          type: string
+        headingFont:
+          type: string
+        bodyFont:
+          type: string
+        logoObjectPath:
+          type: string
+          nullable: true
+        density:
+          type: string
+          enum: [spacious, balanced, dense]
+
+    SlideOutline:
+      type: object
+      properties:
+        slideIndex:
+          type: integer
+          description: 0-based slide index
+        guidance:
+          type: string
+          description: Specific instructions for this slide
+      required:
+        - slideIndex
+        - guidance
+
     Slide:
       type: object
       properties:
@@ -485,6 +736,9 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Slide"
+        projectId:
+          type: string
+          nullable: true
         createdAt:
           type: string
           format: date-time
@@ -512,6 +766,9 @@ components:
           type: string
         slideCount:
           type: integer
+        projectId:
+          type: string
+          nullable: true
         createdAt:
           type: string
           format: date-time
@@ -538,6 +795,15 @@ components:
         narrativeStructure:
           type: string
           enum: [problem-solution, consulting, chronological, mece-pyramid, executive-summary, custom]
+        projectId:
+          type: string
+          nullable: true
+          description: Optional project to use for branding and corpus scoping
+        slideOutlines:
+          type: array
+          items:
+            $ref: "#/components/schemas/SlideOutline"
+          description: Optional per-slide guidance for slide-by-slide mode
       required:
         - title
         - brief
@@ -611,6 +877,9 @@ components:
         status:
           type: string
           enum: [processing, ready, error]
+        projectId:
+          type: string
+          nullable: true
         createdAt:
           type: string
           format: date-time

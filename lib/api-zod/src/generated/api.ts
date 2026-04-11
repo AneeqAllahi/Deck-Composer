@@ -72,6 +72,128 @@ export const ResetBrandProfileResponse = zod.object({
 });
 
 /**
+ * @summary List all projects
+ */
+export const ListProjectsResponseItem = zod.object({
+  id: zod.string(),
+  name: zod.string(),
+  description: zod.string(),
+  primaryColor: zod.string(),
+  secondaryColor: zod.string(),
+  accentColor: zod.string(),
+  headingFont: zod.string(),
+  bodyFont: zod.string(),
+  logoObjectPath: zod.string().nullish(),
+  density: zod.enum(["spacious", "balanced", "dense"]),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+export const ListProjectsResponse = zod.array(ListProjectsResponseItem);
+
+/**
+ * @summary Create a new project
+ */
+export const CreateProjectBody = zod.object({
+  name: zod.string(),
+  description: zod.string().optional(),
+  primaryColor: zod.string().optional(),
+  secondaryColor: zod.string().optional(),
+  accentColor: zod.string().optional(),
+  headingFont: zod.string().optional(),
+  bodyFont: zod.string().optional(),
+  density: zod.enum(["spacious", "balanced", "dense"]).optional(),
+});
+
+/**
+ * @summary Get a specific project
+ */
+export const GetProjectParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const GetProjectResponse = zod.object({
+  id: zod.string(),
+  name: zod.string(),
+  description: zod.string(),
+  primaryColor: zod.string(),
+  secondaryColor: zod.string(),
+  accentColor: zod.string(),
+  headingFont: zod.string(),
+  bodyFont: zod.string(),
+  logoObjectPath: zod.string().nullish(),
+  density: zod.enum(["spacious", "balanced", "dense"]),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Update a project
+ */
+export const UpdateProjectParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const UpdateProjectBody = zod.object({
+  name: zod.string().optional(),
+  description: zod.string().optional(),
+  primaryColor: zod.string().optional(),
+  secondaryColor: zod.string().optional(),
+  accentColor: zod.string().optional(),
+  headingFont: zod.string().optional(),
+  bodyFont: zod.string().optional(),
+  logoObjectPath: zod.string().nullish(),
+  density: zod.enum(["spacious", "balanced", "dense"]).optional(),
+});
+
+export const UpdateProjectResponse = zod.object({
+  id: zod.string(),
+  name: zod.string(),
+  description: zod.string(),
+  primaryColor: zod.string(),
+  secondaryColor: zod.string(),
+  accentColor: zod.string(),
+  headingFont: zod.string(),
+  bodyFont: zod.string(),
+  logoObjectPath: zod.string().nullish(),
+  density: zod.enum(["spacious", "balanced", "dense"]),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Delete a project and its corpus documents
+ */
+export const DeleteProjectParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+/**
+ * @summary Set the logo for a project
+ */
+export const UpdateProjectLogoParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const UpdateProjectLogoBody = zod.object({
+  objectPath: zod.string(),
+});
+
+export const UpdateProjectLogoResponse = zod.object({
+  id: zod.string(),
+  name: zod.string(),
+  description: zod.string(),
+  primaryColor: zod.string(),
+  secondaryColor: zod.string(),
+  accentColor: zod.string(),
+  headingFont: zod.string(),
+  bodyFont: zod.string(),
+  logoObjectPath: zod.string().nullish(),
+  density: zod.enum(["spacious", "balanced", "dense"]),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
  * @summary List all decks
  */
 export const ListDecksResponseItem = zod.object({
@@ -79,6 +201,7 @@ export const ListDecksResponseItem = zod.object({
   title: zod.string(),
   brief: zod.string(),
   slideCount: zod.number(),
+  projectId: zod.string().nullish(),
   createdAt: zod.coerce.date(),
 });
 export const ListDecksResponse = zod.array(ListDecksResponseItem);
@@ -105,6 +228,19 @@ export const GenerateDeckBody = zod.object({
     "executive-summary",
     "custom",
   ]),
+  projectId: zod
+    .string()
+    .nullish()
+    .describe("Optional project to use for branding and corpus scoping"),
+  slideOutlines: zod
+    .array(
+      zod.object({
+        slideIndex: zod.number().describe("0-based slide index"),
+        guidance: zod.string().describe("Specific instructions for this slide"),
+      }),
+    )
+    .optional()
+    .describe("Optional per-slide guidance for slide-by-slide mode"),
 });
 
 /**
@@ -165,6 +301,7 @@ export const GetDeckResponse = zod.object({
       columnRight: zod.string().nullish(),
     }),
   ),
+  projectId: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -244,6 +381,7 @@ export const UpdateSlideResponse = zod.object({
       columnRight: zod.string().nullish(),
     }),
   ),
+  projectId: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -303,6 +441,7 @@ export const RegenerateSlideResponse = zod.object({
       columnRight: zod.string().nullish(),
     }),
   ),
+  projectId: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -315,14 +454,22 @@ export const ExportDeckParams = zod.object({
 });
 
 /**
- * @summary List all corpus documents
+ * @summary List corpus documents
  */
+export const ListCorpusDocumentsQueryParams = zod.object({
+  projectId: zod.coerce
+    .string()
+    .optional()
+    .describe("Filter documents by project"),
+});
+
 export const ListCorpusDocumentsResponseItem = zod.object({
   id: zod.string(),
   filename: zod.string(),
   fileType: zod.enum(["pdf", "pptx"]),
   chunkCount: zod.number(),
   status: zod.enum(["processing", "ready", "error"]),
+  projectId: zod.string().nullish(),
   createdAt: zod.coerce.date(),
 });
 export const ListCorpusDocumentsResponse = zod.array(
@@ -334,6 +481,10 @@ export const ListCorpusDocumentsResponse = zod.array(
  */
 export const UploadCorpusDocumentBody = zod.object({
   file: zod.instanceof(File),
+  projectId: zod
+    .string()
+    .optional()
+    .describe("Optional project to associate the document with"),
 });
 
 /**

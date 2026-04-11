@@ -1,6 +1,6 @@
 import React from "react";
 import { Link, useLocation } from "wouter";
-import { Layers, Palette, Library, PlusCircle, Presentation } from "lucide-react";
+import { Layers, Palette, Library, PlusCircle, Presentation, FolderKanban } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
@@ -9,6 +9,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const navItems = [
     { href: "/", label: "Library", icon: Library },
     { href: "/generate", label: "New Deck", icon: PlusCircle },
+    { href: "/projects", label: "Projects", icon: FolderKanban },
     { href: "/corpus", label: "Corpus", icon: Layers },
     { href: "/brand", label: "Brand", icon: Palette },
   ];

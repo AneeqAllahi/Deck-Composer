@@ -11,5 +11,6 @@ export interface DeckSummary {
   title: string;
   brief: string;
   slideCount: number;
+  projectId?: string | null;
   createdAt: Date;
 }

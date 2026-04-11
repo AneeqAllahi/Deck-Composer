@@ -6,8 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type UploadCorpusDocumentBody = {
-  file: Blob;
-  /** Optional project to associate the document with */
+export type ListCorpusDocumentsParams = {
+  /**
+   * Filter documents by project
+   */
   projectId?: string;
 };

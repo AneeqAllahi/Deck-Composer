@@ -21,7 +21,9 @@ lib/
 ## Key Features
 
 - **Deck Generation**: OpenAI GPT-based generation of structured slide decks from a brief
-- **RAG Pipeline**: PostgreSQL full-text search (tsvector/tsquery) over past deck corpus
+- **Multi-Project Corpus & Branding**: Projects have their own corpus documents and brand identity, selectable at generation time
+- **Slide-by-Slide Directives**: Optional per-slide guidance anchored to the slide count for fine-grained generation control
+- **RAG Pipeline**: PostgreSQL full-text search (tsvector/tsquery) over past deck corpus, scoped per-project
 - **Corpus Ingestion**: Upload PDF/PPTX → extract text → chunk → store in corpus_chunks
 - **Slide Editor**: Inline editing, single slide regeneration with optional instruction
 - **PPTX Export**: pptxgenjs generates brand-styled presentations
@@ -30,9 +32,10 @@ lib/
 ## Pages
 
 - `/` — Deck library with stats dashboard
-- `/generate` — New deck wizard form
-- `/corpus` — RAG corpus manager (upload/list/delete)
-- `/brand` — Brand profile configuration
+- `/generate` — New deck wizard form (with project selector + slide-by-slide mode)
+- `/projects` — Project management (brand + corpus per project)
+- `/corpus` — RAG corpus manager (upload/list/delete, filterable by project)
+- `/brand` — Global brand profile configuration
 - `/decks/:id` — Slide editor/viewer
 
 ## API Routes
@@ -42,16 +45,22 @@ All routes are prefixed with `/api/`:
 - `GET /api/healthz` — Health check
 - `GET /api/brand-profile` — Get brand profile
 - `PUT /api/brand-profile` — Update brand profile
+- `GET /api/projects` — List all projects
+- `POST /api/projects` — Create a project
+- `GET /api/projects/:id` — Get a project
+- `PUT /api/projects/:id` — Update project brand/name/description
+- `DELETE /api/projects/:id` — Delete project (cascades to corpus docs)
+- `POST /api/projects/:id/logo` — Set project logo via objectPath
 - `GET /api/decks` — List deck summaries
-- `POST /api/decks/generate` — Generate a new deck with AI
+- `POST /api/decks/generate` — Generate a new deck with AI (accepts `projectId`, `slideOutlines`)
 - `GET /api/decks/stats` — Get stats (totalDecks, totalCorpusDocuments, etc.)
 - `GET /api/decks/:id` — Get full deck with slides
 - `DELETE /api/decks/:id` — Delete a deck
 - `PUT /api/decks/:id/slides/:slideIndex` — Update a slide
 - `POST /api/decks/:id/slides/:slideIndex/regenerate` — Regenerate a slide with AI
 - `GET /api/decks/:id/export` — Export deck to PPTX (binary download)
-- `GET /api/corpus` — List corpus documents
-- `POST /api/corpus/upload` — Upload PDF/PPTX (multipart/form-data)
+- `GET /api/corpus` — List corpus documents (optional `?projectId` filter)
+- `POST /api/corpus/upload` — Upload PDF/PPTX (multipart/form-data, optional `projectId`)
 - `DELETE /api/corpus/:id` — Delete corpus document
 - `POST /api/storage/uploads/request-url` — Get presigned URL for logo upload
 - `GET /api/storage/public-objects/*` — Serve public assets
@@ -60,8 +69,9 @@ All routes are prefixed with `/api/`:
 ## Database Schema
 
 - `brand_profile` — Single row (id="default") with brand colors/fonts/density/logo
-- `decks` — Generated decks with slides stored as JSONB
-- `corpus_documents` — Metadata about uploaded documents
+- `projects` — Per-client projects with own brand settings (colors, fonts, logo, density)
+- `decks` — Generated decks with slides stored as JSONB, optional `project_id`
+- `corpus_documents` — Metadata about uploaded documents, optional `project_id`
 - `corpus_chunks` — Text chunks with full-text search tsvector support
 
 ## Slide Layout Types

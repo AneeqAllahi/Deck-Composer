@@ -9,6 +9,7 @@ import { BrandPage } from "@/pages/brand";
 import { CorpusPage } from "@/pages/corpus";
 import { GeneratePage } from "@/pages/generate";
 import { DeckEditorPage } from "@/pages/deck-editor";
+import { ProjectsPage } from "@/pages/projects";
 
 const queryClient = new QueryClient();
 
@@ -20,6 +21,7 @@ function Router() {
         <Route path="/brand" component={BrandPage} />
         <Route path="/corpus" component={CorpusPage} />
         <Route path="/generate" component={GeneratePage} />
+        <Route path="/projects" component={ProjectsPage} />
         <Route path="/decks/:id" component={DeckEditorPage} />
         <Route component={NotFound} />
       </Switch>

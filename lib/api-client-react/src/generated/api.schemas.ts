@@ -54,6 +54,78 @@ export interface UpdateBrandProfileBody {
   density?: UpdateBrandProfileBodyDensity;
 }
 
+export type ProjectDensity =
+  (typeof ProjectDensity)[keyof typeof ProjectDensity];
+
+export const ProjectDensity = {
+  spacious: "spacious",
+  balanced: "balanced",
+  dense: "dense",
+} as const;
+
+export interface Project {
+  id: string;
+  name: string;
+  description: string;
+  primaryColor: string;
+  secondaryColor: string;
+  accentColor: string;
+  headingFont: string;
+  bodyFont: string;
+  logoObjectPath?: string | null;
+  density: ProjectDensity;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type CreateProjectBodyDensity =
+  (typeof CreateProjectBodyDensity)[keyof typeof CreateProjectBodyDensity];
+
+export const CreateProjectBodyDensity = {
+  spacious: "spacious",
+  balanced: "balanced",
+  dense: "dense",
+} as const;
+
+export interface CreateProjectBody {
+  name: string;
+  description?: string;
+  primaryColor?: string;
+  secondaryColor?: string;
+  accentColor?: string;
+  headingFont?: string;
+  bodyFont?: string;
+  density?: CreateProjectBodyDensity;
+}
+
+export type UpdateProjectBodyDensity =
+  (typeof UpdateProjectBodyDensity)[keyof typeof UpdateProjectBodyDensity];
+
+export const UpdateProjectBodyDensity = {
+  spacious: "spacious",
+  balanced: "balanced",
+  dense: "dense",
+} as const;
+
+export interface UpdateProjectBody {
+  name?: string;
+  description?: string;
+  primaryColor?: string;
+  secondaryColor?: string;
+  accentColor?: string;
+  headingFont?: string;
+  bodyFont?: string;
+  logoObjectPath?: string | null;
+  density?: UpdateProjectBodyDensity;
+}
+
+export interface SlideOutline {
+  /** 0-based slide index */
+  slideIndex: number;
+  /** Specific instructions for this slide */
+  guidance: string;
+}
+
 export type SlideLayoutType =
   (typeof SlideLayoutType)[keyof typeof SlideLayoutType];
 
@@ -103,6 +175,7 @@ export interface Deck {
   audience: string;
   narrativeStructure: DeckNarrativeStructure;
   slides: Slide[];
+  projectId?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -112,6 +185,7 @@ export interface DeckSummary {
   title: string;
   brief: string;
   slideCount: number;
+  projectId?: string | null;
   createdAt: string;
 }
 
@@ -137,6 +211,10 @@ export interface GenerateDeckBody {
    */
   slideCount: number;
   narrativeStructure: GenerateDeckBodyNarrativeStructure;
+  /** Optional project to use for branding and corpus scoping */
+  projectId?: string | null;
+  /** Optional per-slide guidance for slide-by-slide mode */
+  slideOutlines?: SlideOutline[];
 }
 
 export type UpdateSlideBodyLayoutType =
@@ -197,6 +275,7 @@ export interface CorpusDocument {
   fileType: CorpusDocumentFileType;
   chunkCount: number;
   status: CorpusDocumentStatus;
+  projectId?: string | null;
   createdAt: string;
 }
 
@@ -211,6 +290,19 @@ export interface RequestUploadUrlResponse {
   objectPath: string;
 }
 
+export type UpdateProjectLogoBody = {
+  objectPath: string;
+};
+
+export type ListCorpusDocumentsParams = {
+  /**
+   * Filter documents by project
+   */
+  projectId?: string;
+};
+
 export type UploadCorpusDocumentBody = {
   file: Blob;
+  /** Optional project to associate the document with */
+  projectId?: string;
 };

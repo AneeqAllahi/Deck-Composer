@@ -15,6 +15,7 @@ export interface Deck {
   audience: string;
   narrativeStructure: DeckNarrativeStructure;
   slides: Slide[];
+  projectId?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

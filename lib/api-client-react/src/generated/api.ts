@@ -20,15 +20,20 @@ import type {
   ApiError,
   BrandProfile,
   CorpusDocument,
+  CreateProjectBody,
   Deck,
   DeckStats,
   DeckSummary,
   GenerateDeckBody,
   HealthStatus,
+  ListCorpusDocumentsParams,
+  Project,
   RegenerateSlideBody,
   RequestUploadUrlBody,
   RequestUploadUrlResponse,
   UpdateBrandProfileBody,
+  UpdateProjectBody,
+  UpdateProjectLogoBody,
   UpdateSlideBody,
   UploadCorpusDocumentBody,
 } from "./api.schemas";
@@ -359,6 +364,512 @@ export const useResetBrandProfile = <
   TContext
 > => {
   return useMutation(getResetBrandProfileMutationOptions(options));
+};
+
+/**
+ * @summary List all projects
+ */
+export const getListProjectsUrl = () => {
+  return `/api/projects`;
+};
+
+export const listProjects = async (
+  options?: RequestInit,
+): Promise<Project[]> => {
+  return customFetch<Project[]>(getListProjectsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListProjectsQueryKey = () => {
+  return [`/api/projects`] as const;
+};
+
+export const getListProjectsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listProjects>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listProjects>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListProjectsQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listProjects>>> = ({
+    signal,
+  }) => listProjects({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listProjects>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListProjectsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listProjects>>
+>;
+export type ListProjectsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List all projects
+ */
+
+export function useListProjects<
+  TData = Awaited<ReturnType<typeof listProjects>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listProjects>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListProjectsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Create a new project
+ */
+export const getCreateProjectUrl = () => {
+  return `/api/projects`;
+};
+
+export const createProject = async (
+  createProjectBody: CreateProjectBody,
+  options?: RequestInit,
+): Promise<Project> => {
+  return customFetch<Project>(getCreateProjectUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createProjectBody),
+  });
+};
+
+export const getCreateProjectMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createProject>>,
+    TError,
+    { data: BodyType<CreateProjectBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createProject>>,
+  TError,
+  { data: BodyType<CreateProjectBody> },
+  TContext
+> => {
+  const mutationKey = ["createProject"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createProject>>,
+    { data: BodyType<CreateProjectBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createProject(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateProjectMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createProject>>
+>;
+export type CreateProjectMutationBody = BodyType<CreateProjectBody>;
+export type CreateProjectMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Create a new project
+ */
+export const useCreateProject = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createProject>>,
+    TError,
+    { data: BodyType<CreateProjectBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createProject>>,
+  TError,
+  { data: BodyType<CreateProjectBody> },
+  TContext
+> => {
+  return useMutation(getCreateProjectMutationOptions(options));
+};
+
+/**
+ * @summary Get a specific project
+ */
+export const getGetProjectUrl = (id: string) => {
+  return `/api/projects/${id}`;
+};
+
+export const getProject = async (
+  id: string,
+  options?: RequestInit,
+): Promise<Project> => {
+  return customFetch<Project>(getGetProjectUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetProjectQueryKey = (id: string) => {
+  return [`/api/projects/${id}`] as const;
+};
+
+export const getGetProjectQueryOptions = <
+  TData = Awaited<ReturnType<typeof getProject>>,
+  TError = ErrorType<ApiError>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getProject>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetProjectQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getProject>>> = ({
+    signal,
+  }) => getProject(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getProject>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetProjectQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getProject>>
+>;
+export type GetProjectQueryError = ErrorType<ApiError>;
+
+/**
+ * @summary Get a specific project
+ */
+
+export function useGetProject<
+  TData = Awaited<ReturnType<typeof getProject>>,
+  TError = ErrorType<ApiError>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getProject>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetProjectQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Update a project
+ */
+export const getUpdateProjectUrl = (id: string) => {
+  return `/api/projects/${id}`;
+};
+
+export const updateProject = async (
+  id: string,
+  updateProjectBody: UpdateProjectBody,
+  options?: RequestInit,
+): Promise<Project> => {
+  return customFetch<Project>(getUpdateProjectUrl(id), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateProjectBody),
+  });
+};
+
+export const getUpdateProjectMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateProject>>,
+    TError,
+    { id: string; data: BodyType<UpdateProjectBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateProject>>,
+  TError,
+  { id: string; data: BodyType<UpdateProjectBody> },
+  TContext
+> => {
+  const mutationKey = ["updateProject"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateProject>>,
+    { id: string; data: BodyType<UpdateProjectBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateProject(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateProjectMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateProject>>
+>;
+export type UpdateProjectMutationBody = BodyType<UpdateProjectBody>;
+export type UpdateProjectMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Update a project
+ */
+export const useUpdateProject = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateProject>>,
+    TError,
+    { id: string; data: BodyType<UpdateProjectBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateProject>>,
+  TError,
+  { id: string; data: BodyType<UpdateProjectBody> },
+  TContext
+> => {
+  return useMutation(getUpdateProjectMutationOptions(options));
+};
+
+/**
+ * @summary Delete a project and its corpus documents
+ */
+export const getDeleteProjectUrl = (id: string) => {
+  return `/api/projects/${id}`;
+};
+
+export const deleteProject = async (
+  id: string,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteProjectUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteProjectMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteProject>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteProject>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["deleteProject"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteProject>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteProject(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteProjectMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteProject>>
+>;
+
+export type DeleteProjectMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Delete a project and its corpus documents
+ */
+export const useDeleteProject = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteProject>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteProject>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getDeleteProjectMutationOptions(options));
+};
+
+/**
+ * @summary Set the logo for a project
+ */
+export const getUpdateProjectLogoUrl = (id: string) => {
+  return `/api/projects/${id}/logo`;
+};
+
+export const updateProjectLogo = async (
+  id: string,
+  updateProjectLogoBody: UpdateProjectLogoBody,
+  options?: RequestInit,
+): Promise<Project> => {
+  return customFetch<Project>(getUpdateProjectLogoUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateProjectLogoBody),
+  });
+};
+
+export const getUpdateProjectLogoMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateProjectLogo>>,
+    TError,
+    { id: string; data: BodyType<UpdateProjectLogoBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateProjectLogo>>,
+  TError,
+  { id: string; data: BodyType<UpdateProjectLogoBody> },
+  TContext
+> => {
+  const mutationKey = ["updateProjectLogo"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateProjectLogo>>,
+    { id: string; data: BodyType<UpdateProjectLogoBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateProjectLogo(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateProjectLogoMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateProjectLogo>>
+>;
+export type UpdateProjectLogoMutationBody = BodyType<UpdateProjectLogoBody>;
+export type UpdateProjectLogoMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Set the logo for a project
+ */
+export const useUpdateProjectLogo = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateProjectLogo>>,
+    TError,
+    { id: string; data: BodyType<UpdateProjectLogoBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateProjectLogo>>,
+  TError,
+  { id: string; data: BodyType<UpdateProjectLogoBody> },
+  TContext
+> => {
+  return useMutation(getUpdateProjectLogoMutationOptions(options));
 };
 
 /**
@@ -1015,43 +1526,65 @@ export function useExportDeck<
 }
 
 /**
- * @summary List all corpus documents
+ * @summary List corpus documents
  */
-export const getListCorpusDocumentsUrl = () => {
-  return `/api/corpus`;
+export const getListCorpusDocumentsUrl = (
+  params?: ListCorpusDocumentsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/corpus?${stringifiedParams}`
+    : `/api/corpus`;
 };
 
 export const listCorpusDocuments = async (
+  params?: ListCorpusDocumentsParams,
   options?: RequestInit,
 ): Promise<CorpusDocument[]> => {
-  return customFetch<CorpusDocument[]>(getListCorpusDocumentsUrl(), {
+  return customFetch<CorpusDocument[]>(getListCorpusDocumentsUrl(params), {
     ...options,
     method: "GET",
   });
 };
 
-export const getListCorpusDocumentsQueryKey = () => {
-  return [`/api/corpus`] as const;
+export const getListCorpusDocumentsQueryKey = (
+  params?: ListCorpusDocumentsParams,
+) => {
+  return [`/api/corpus`, ...(params ? [params] : [])] as const;
 };
 
 export const getListCorpusDocumentsQueryOptions = <
   TData = Awaited<ReturnType<typeof listCorpusDocuments>>,
   TError = ErrorType<unknown>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof listCorpusDocuments>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}) => {
+>(
+  params?: ListCorpusDocumentsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listCorpusDocuments>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getListCorpusDocumentsQueryKey();
+  const queryKey =
+    queryOptions?.queryKey ?? getListCorpusDocumentsQueryKey(params);
 
   const queryFn: QueryFunction<
     Awaited<ReturnType<typeof listCorpusDocuments>>
-  > = ({ signal }) => listCorpusDocuments({ signal, ...requestOptions });
+  > = ({ signal }) =>
+    listCorpusDocuments(params, { signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
     Awaited<ReturnType<typeof listCorpusDocuments>>,
@@ -1066,21 +1599,24 @@ export type ListCorpusDocumentsQueryResult = NonNullable<
 export type ListCorpusDocumentsQueryError = ErrorType<unknown>;
 
 /**
- * @summary List all corpus documents
+ * @summary List corpus documents
  */
 
 export function useListCorpusDocuments<
   TData = Awaited<ReturnType<typeof listCorpusDocuments>>,
   TError = ErrorType<unknown>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof listCorpusDocuments>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getListCorpusDocumentsQueryOptions(options);
+>(
+  params?: ListCorpusDocumentsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listCorpusDocuments>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListCorpusDocumentsQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
@@ -1102,6 +1638,9 @@ export const uploadCorpusDocument = async (
 ): Promise<CorpusDocument> => {
   const formData = new FormData();
   formData.append(`file`, uploadCorpusDocumentBody.file);
+  if (uploadCorpusDocumentBody.projectId !== undefined) {
+    formData.append(`projectId`, uploadCorpusDocumentBody.projectId);
+  }
 
   return customFetch<CorpusDocument>(getUploadCorpusDocumentUrl(), {
     ...options,

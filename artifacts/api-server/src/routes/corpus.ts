@@ -2,7 +2,7 @@ import { Router } from "express";
 import multer from "multer";
 import { db } from "@workspace/db";
 import { corpusDocumentsTable, corpusChunksTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
 import { chunkText, generateId } from "../lib/rag.js";
 
 const router = Router();
@@ -70,13 +70,25 @@ async function extractTextFromPptx(buffer: Buffer): Promise<{ chunks: string[]; 
 
 router.get("/corpus", async (req, res) => {
   try {
-    const docs = await db.select().from(corpusDocumentsTable).orderBy(corpusDocumentsTable.createdAt);
+    const projectId = req.query.projectId as string | undefined;
+
+    let docs;
+    if (projectId) {
+      docs = await db.select().from(corpusDocumentsTable)
+        .where(eq(corpusDocumentsTable.projectId, projectId))
+        .orderBy(corpusDocumentsTable.createdAt);
+    } else {
+      docs = await db.select().from(corpusDocumentsTable)
+        .orderBy(corpusDocumentsTable.createdAt);
+    }
+
     return res.json(docs.map((d) => ({
       id: d.id,
       filename: d.filename,
       fileType: d.fileType,
       chunkCount: d.chunkCount,
       status: d.status,
+      projectId: d.projectId,
       createdAt: d.createdAt,
     })));
   } catch (err) {
@@ -101,6 +113,7 @@ router.post("/corpus/upload", upload.single("file"), async (req, res) => {
     return;
   }
 
+  const projectId = (req.body?.projectId as string | undefined) || null;
   const docId = generateId();
   const fileType = isPdf ? "pdf" : "pptx";
 
@@ -110,6 +123,7 @@ router.post("/corpus/upload", upload.single("file"), async (req, res) => {
     fileType,
     chunkCount: 0,
     status: "processing",
+    projectId,
   }).returning();
 
   res.status(201).json({
@@ -118,6 +132,7 @@ router.post("/corpus/upload", upload.single("file"), async (req, res) => {
     fileType: doc[0].fileType,
     chunkCount: 0,
     status: "processing",
+    projectId: doc[0].projectId,
     createdAt: doc[0].createdAt,
   });
 

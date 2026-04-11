@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { GenerateDeckBodyNarrativeStructure } from "./generateDeckBodyNarrativeStructure";
+import type { SlideOutline } from "./slideOutline";
 
 export interface GenerateDeckBody {
   title: string;
@@ -17,4 +18,8 @@ export interface GenerateDeckBody {
    */
   slideCount: number;
   narrativeStructure: GenerateDeckBodyNarrativeStructure;
+  /** Optional project to use for branding and corpus scoping */
+  projectId?: string | null;
+  /** Optional per-slide guidance for slide-by-slide mode */
+  slideOutlines?: SlideOutline[];
 }
