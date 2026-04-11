@@ -122,8 +122,12 @@ export interface UpdateProjectBody {
 export interface SlideOutline {
   /** 0-based slide index */
   slideIndex: number;
-  /** Specific instructions for this slide */
+  /** Exact slide title to enforce (AI will use this verbatim) */
+  title?: string;
+  /** Specific content or structural instructions for this slide */
   guidance: string;
+  /** Object storage path of an image/logo to embed on this slide */
+  imageObjectPath?: string | null;
 }
 
 export type SlideLayoutType =

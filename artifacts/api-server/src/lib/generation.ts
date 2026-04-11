@@ -2,7 +2,7 @@ import { openai } from "@workspace/integrations-openai-ai-server";
 import type { BrandProfile } from "@workspace/db";
 import type { SlideData } from "@workspace/db";
 
-export type SlideOutline = { slideIndex: number; guidance: string };
+export type SlideOutline = { slideIndex: number; guidance: string; title?: string; imageObjectPath?: string | null };
 
 function getDensityGuidance(density: string): string {
   switch (density) {
@@ -39,9 +39,15 @@ export async function generateDeckSlides(params: {
     ? `\n\nRelevant context from past decks (use for structural and stylistic guidance):\n${corpusContext.slice(0, 8).map((c, i) => `[Context ${i + 1}]: ${c}`).join("\n\n")}`
     : "";
 
-  const filledOutlines = (slideOutlines ?? []).filter((o) => o.guidance.trim().length > 0);
+  const filledOutlines = (slideOutlines ?? []).filter((o) => o.guidance.trim().length > 0 || o.title?.trim());
   const slideDirectivesSection = filledOutlines.length > 0
-    ? `\n\nPer-slide directives — follow these instructions precisely for the specified slides:\n${filledOutlines.map((o) => `- Slide ${o.slideIndex + 1}: ${o.guidance}`).join("\n")}\nSlides without a directive should be generated freely to best support the deck's narrative.`
+    ? `\n\nPer-slide directives — follow these instructions precisely for the specified slides:\n${filledOutlines.map((o) => {
+        const parts: string[] = [];
+        if (o.title?.trim()) parts.push(`title MUST be exactly: "${o.title.trim()}"`);
+        if (o.guidance.trim()) parts.push(o.guidance.trim());
+        if (o.imageObjectPath) parts.push(`this slide has an attached image — reference it in the speaker notes`);
+        return `- Slide ${o.slideIndex + 1}: ${parts.join("; ")}`;
+      }).join("\n")}\nSlides without a directive should be generated freely to best support the deck's narrative.`
     : "";
 
   const densityGuidance = getDensityGuidance(brandProfile.density);
@@ -108,17 +114,22 @@ Generate exactly ${slideCount} professional slides following the ${narrativeStru
     if (!jsonMatch) throw new Error("No JSON array found in response");
     
     const slides = JSON.parse(jsonMatch[0]) as SlideData[];
-    return slides.map((slide, i) => ({
-      slideIndex: i,
-      title: slide.title ?? "Untitled",
-      body: slide.body ?? "",
-      layoutType: slide.layoutType ?? "text",
-      speakerNotes: slide.speakerNotes ?? "",
-      bulletPoints: slide.bulletPoints ?? [],
-      metrics: slide.metrics ?? [],
-      columnLeft: slide.columnLeft ?? null,
-      columnRight: slide.columnRight ?? null,
-    }));
+    const outlineMap = new Map((slideOutlines ?? []).map((o) => [o.slideIndex, o]));
+    return slides.map((slide, i) => {
+      const outline = outlineMap.get(i);
+      return {
+        slideIndex: i,
+        title: outline?.title?.trim() ? outline.title.trim() : (slide.title ?? "Untitled"),
+        body: slide.body ?? "",
+        layoutType: slide.layoutType ?? "text",
+        speakerNotes: slide.speakerNotes ?? "",
+        bulletPoints: slide.bulletPoints ?? [],
+        metrics: slide.metrics ?? [],
+        columnLeft: slide.columnLeft ?? null,
+        columnRight: slide.columnRight ?? null,
+        imageObjectPath: outline?.imageObjectPath ?? null,
+      };
+    });
   } catch (err) {
     throw new Error(`Failed to parse slide JSON: ${err}`);
   }

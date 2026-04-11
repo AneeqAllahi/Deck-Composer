@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { useForm, useFieldArray } from "react-hook-form";
+import { useForm, useFieldArray, Control } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useLocation } from "wouter";
 import { useGenerateDeck, useListProjects, GenerateDeckBodyNarrativeStructure } from "@workspace/api-client-react";
+import { useUpload } from "@workspace/object-storage-web";
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
@@ -13,7 +14,7 @@ import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Wand2, Target, AlignLeft, FolderOpen, ListOrdered } from "lucide-react";
+import { Wand2, Target, AlignLeft, FolderOpen, ListOrdered, ImagePlus, X, Type } from "lucide-react";
 
 const generateSchema = z.object({
   title: z.string().min(3, "Title must be at least 3 characters").max(100, "Title is too long"),
@@ -22,12 +23,134 @@ const generateSchema = z.object({
   slideCount: z.number().min(3).max(30),
   narrativeStructure: z.nativeEnum(GenerateDeckBodyNarrativeStructure),
   projectId: z.string().optional(),
-  slideOutlines: z.array(z.object({ slideIndex: z.number(), guidance: z.string() })).optional(),
+  slideOutlines: z.array(z.object({
+    slideIndex: z.number(),
+    title: z.string().optional(),
+    guidance: z.string(),
+    imageObjectPath: z.string().nullable().optional(),
+  })).optional(),
 });
 
 type GenerateFormValues = z.infer<typeof generateSchema>;
 
 const NO_PROJECT = "__none__";
+
+function SlideOutlineCard({
+  index,
+  control,
+  onImageUploaded,
+  onImageRemoved,
+  imageObjectPath,
+}: {
+  index: number;
+  control: Control<GenerateFormValues>;
+  onImageUploaded: (path: string) => void;
+  onImageRemoved: () => void;
+  imageObjectPath?: string | null;
+}) {
+  const { toast } = useToast();
+  const { uploadFile, isUploading } = useUpload({
+    onSuccess: (response: { objectPath: string }) => {
+      onImageUploaded(response.objectPath);
+    },
+    onError: () => toast({ title: "Image upload failed", variant: "destructive" }),
+  });
+
+  return (
+    <div className="rounded-lg border bg-card p-3 space-y-2.5">
+      <div className="flex items-center gap-2">
+        <div className="flex-shrink-0 w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-xs font-mono font-semibold text-primary">
+          {index + 1}
+        </div>
+        <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Slide {index + 1}</span>
+      </div>
+
+      <FormField
+        control={control}
+        name={`slideOutlines.${index}.title`}
+        render={({ field }) => (
+          <FormItem className="mb-0">
+            <div className="flex items-center gap-1.5 mb-1">
+              <Type className="h-3 w-3 text-muted-foreground" />
+              <span className="text-xs text-muted-foreground">Title</span>
+            </div>
+            <FormControl>
+              <Input
+                placeholder="Leave blank for AI to decide…"
+                className="h-8 text-sm"
+                {...field}
+              />
+            </FormControl>
+          </FormItem>
+        )}
+      />
+
+      <FormField
+        control={control}
+        name={`slideOutlines.${index}.guidance`}
+        render={({ field }) => (
+          <FormItem className="mb-0">
+            <div className="flex items-center gap-1.5 mb-1">
+              <AlignLeft className="h-3 w-3 text-muted-foreground" />
+              <span className="text-xs text-muted-foreground">Instructions</span>
+            </div>
+            <FormControl>
+              <Textarea
+                placeholder={`e.g. "Focus on market sizing data" or "Include CEO quote"`}
+                className="min-h-[60px] text-sm resize-none"
+                {...field}
+              />
+            </FormControl>
+          </FormItem>
+        )}
+      />
+
+      <div className="space-y-1">
+        <div className="flex items-center gap-1.5">
+          <ImagePlus className="h-3 w-3 text-muted-foreground" />
+          <span className="text-xs text-muted-foreground">Image / Logo</span>
+        </div>
+        {imageObjectPath ? (
+          <div className="flex items-center gap-2 p-2 rounded-md bg-muted/50 border">
+            <img
+              src={`/api/storage${imageObjectPath}`}
+              alt="Slide image"
+              className="h-10 w-14 object-cover rounded"
+            />
+            <span className="text-xs text-muted-foreground flex-1 truncate">Image attached</span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 flex-shrink-0"
+              onClick={onImageRemoved}
+            >
+              <X className="h-3 w-3" />
+            </Button>
+          </div>
+        ) : (
+          <label className="flex items-center gap-2 cursor-pointer p-2 rounded-md border border-dashed hover:bg-muted/30 transition-colors">
+            <ImagePlus className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+            <span className="text-xs text-muted-foreground">
+              {isUploading ? "Uploading…" : "Click to attach an image or logo"}
+            </span>
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              disabled={isUploading}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) uploadFile(file);
+                e.target.value = "";
+              }}
+            />
+          </label>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export function GeneratePage() {
   const [, setLocation] = useLocation();
@@ -45,18 +168,22 @@ export function GeneratePage() {
       slideCount: 10,
       narrativeStructure: "problem-solution",
       projectId: undefined,
-      slideOutlines: Array.from({ length: 10 }, (_, i) => ({ slideIndex: i, guidance: "" })),
+      slideOutlines: Array.from({ length: 10 }, (_, i) => ({ slideIndex: i, title: "", guidance: "", imageObjectPath: null })),
     },
   });
 
   const slideCount = form.watch("slideCount");
+  const slideOutlines = form.watch("slideOutlines");
   const { fields, replace } = useFieldArray({ control: form.control, name: "slideOutlines" });
 
   const handleSlideCountChange = (val: number) => {
     form.setValue("slideCount", val);
+    const current = form.getValues("slideOutlines") ?? [];
     replace(Array.from({ length: val }, (_, i) => ({
       slideIndex: i,
-      guidance: fields[i]?.guidance ?? "",
+      title: current[i]?.title ?? "",
+      guidance: current[i]?.guidance ?? "",
+      imageObjectPath: current[i]?.imageObjectPath ?? null,
     })));
   };
 
@@ -70,7 +197,12 @@ export function GeneratePage() {
         narrativeStructure: data.narrativeStructure,
         projectId: data.projectId === NO_PROJECT ? null : (data.projectId ?? null),
         slideOutlines: slideBySlideEnabled && Array.isArray(data.slideOutlines)
-          ? (data.slideOutlines as { slideIndex: number; guidance: string }[]).filter((o) => o.guidance.trim().length > 0)
+          ? data.slideOutlines.filter((o) => o.guidance.trim().length > 0 || o.title?.trim() || o.imageObjectPath).map((o) => ({
+              slideIndex: o.slideIndex,
+              guidance: o.guidance,
+              title: o.title || undefined,
+              imageObjectPath: o.imageObjectPath ?? undefined,
+            }))
           : undefined,
       };
       const result = await generateDeck.mutateAsync({ data: payload });
@@ -287,36 +419,28 @@ export function GeneratePage() {
                   {slideBySlideEnabled ? (
                     <div className="space-y-3">
                       <p className="text-sm text-muted-foreground">
-                        Add optional directives for specific slides. Leave blank to let AI decide.
+                        Customise individual slides — set a fixed title, add content instructions, or attach an image. Leave any field blank to let the AI decide.
                       </p>
-                      <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
+                      <div className="space-y-2 max-h-[560px] overflow-y-auto pr-1">
                         {fields.map((field, index) => (
-                          <div key={field.id} className="flex items-start gap-3 group">
-                            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-muted flex items-center justify-center text-xs font-mono font-medium text-muted-foreground mt-1">
-                              {index + 1}
-                            </div>
-                            <FormField
-                              control={form.control}
-                              name={`slideOutlines.${index}.guidance`}
-                              render={({ field: f }) => (
-                                <FormItem className="flex-1 mb-0">
-                                  <FormControl>
-                                    <Input
-                                      placeholder={`Slide ${index + 1} — optional directive...`}
-                                      className="h-8 text-sm"
-                                      {...f}
-                                    />
-                                  </FormControl>
-                                </FormItem>
-                              )}
-                            />
-                          </div>
+                          <SlideOutlineCard
+                            key={field.id}
+                            index={index}
+                            control={form.control}
+                            imageObjectPath={slideOutlines?.[index]?.imageObjectPath}
+                            onImageUploaded={(path) => {
+                              form.setValue(`slideOutlines.${index}.imageObjectPath`, path, { shouldDirty: true });
+                            }}
+                            onImageRemoved={() => {
+                              form.setValue(`slideOutlines.${index}.imageObjectPath`, null, { shouldDirty: true });
+                            }}
+                          />
                         ))}
                       </div>
                     </div>
                   ) : (
                     <p className="text-sm text-muted-foreground">
-                      Enable this to provide specific instructions for individual slides — e.g. "Slide 3: focus on market sizing" or "Slide 7: include a quote from the CEO."
+                      Enable this to provide specific instructions for individual slides — set an exact title, add content directives, or attach a logo or image to any slide.
                     </p>
                   )}
                 </div>

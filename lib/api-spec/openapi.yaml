@@ -664,9 +664,16 @@ components:
         slideIndex:
           type: integer
           description: 0-based slide index
+        title:
+          type: string
+          description: Exact slide title to enforce (AI will use this verbatim)
         guidance:
           type: string
-          description: Specific instructions for this slide
+          description: Specific content or structural instructions for this slide
+        imageObjectPath:
+          type: string
+          nullable: true
+          description: Object storage path of an image/logo to embed on this slide
       required:
         - slideIndex
         - guidance

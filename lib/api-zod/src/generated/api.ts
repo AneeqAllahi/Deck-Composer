@@ -236,7 +236,21 @@ export const GenerateDeckBody = zod.object({
     .array(
       zod.object({
         slideIndex: zod.number().describe("0-based slide index"),
-        guidance: zod.string().describe("Specific instructions for this slide"),
+        title: zod
+          .string()
+          .optional()
+          .describe("Exact slide title to enforce (AI will use this verbatim)"),
+        guidance: zod
+          .string()
+          .describe(
+            "Specific content or structural instructions for this slide",
+          ),
+        imageObjectPath: zod
+          .string()
+          .nullish()
+          .describe(
+            "Object storage path of an image\/logo to embed on this slide",
+          ),
       }),
     )
     .optional()

@@ -28,6 +28,7 @@ export const SlideSchema = z.object({
   metrics: z.array(z.object({ value: z.string(), label: z.string() })).optional(),
   columnLeft: z.string().nullable().optional(),
   columnRight: z.string().nullable().optional(),
+  imageObjectPath: z.string().nullable().optional(),
 });
 
 export type SlideData = z.infer<typeof SlideSchema>;
