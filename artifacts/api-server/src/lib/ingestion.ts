@@ -293,7 +293,7 @@ async function reembedChunkRows(
   docId: string,
   filename: string,
   chunkRows: { id: string; chunk_text: string }[],
-): Promise<void> {
+): Promise<{ updated: number; failedIds: string[] }> {
   const docFullText = chunkRows.map((c) => c.chunk_text).join("\n\n");
   const summary = await summarizeDocument(filename, docFullText);
   const summaries = await contextualizeChunks(chunkRows.map((c) => c.chunk_text), filename, summary);
@@ -301,9 +301,14 @@ async function reembedChunkRows(
     summaries[i] ? `${summaries[i]}\n\n${c.chunk_text}` : c.chunk_text,
   );
   const embeddings = await generateEmbeddingsBatch(embedTexts);
+  let updated = 0;
+  const failedIds: string[] = [];
   for (let i = 0; i < chunkRows.length; i++) {
     const emb = embeddings[i];
-    if (!emb) continue;
+    if (!emb) {
+      failedIds.push(chunkRows[i].id);
+      continue;
+    }
     const literal = `[${emb.join(",")}]`;
     await db.execute(sql`
       UPDATE corpus_chunks
@@ -312,8 +317,10 @@ async function reembedChunkRows(
           embedding_model = ${EMBED_MODEL}
       WHERE id = ${chunkRows[i].id}
     `);
+    updated += 1;
   }
-  logger.info({ docId, chunks: chunkRows.length }, "Backfill: document re-embedded");
+  logger.info({ docId, chunks: chunkRows.length, updated, failed: failedIds.length }, "Backfill: document re-embedded");
+  return { updated, failedIds };
 }
 
 export type BackfillProgress = {
@@ -332,24 +339,45 @@ export type BackfillOptions = {
   maxDocs?: number;
   /** Called after each document finishes (or fails) so callers can update job state. */
   onProgress?: (p: BackfillProgress) => void;
+  /**
+   * If true, ignore the staleness predicate and re-embed/re-contextualize every
+   * chunk in the corpus. The default predicate only catches embedding-model
+   * upgrades (rows whose embedding_model column doesn't match EMBED_MODEL). A
+   * context-model upgrade or any other change that operators can't express in
+   * the predicate is recovered via this flag.
+   */
+  force?: boolean;
 };
 
 /**
  * Count the distinct documents that still have at least one chunk needing
  * (re-)embedding under the current EMBED_MODEL. Used both by the admin endpoint
  * to seed the job's totalDocs and by the nightly cron to decide whether to run.
+ *
+ * When `force` is true, the count covers the entire corpus regardless of the
+ * staleness predicate — matching what backfillContextualSummaries({force:true})
+ * will actually re-process.
  */
-export async function countPendingBackfillDocs(): Promise<{ docs: number; chunks: number }> {
-  const r = await db.execute(sql`
-    SELECT
-      COUNT(DISTINCT cc.document_id)::int AS docs,
-      COUNT(*)::int AS chunks
-    FROM corpus_chunks cc
-    WHERE cc.contextual_summary IS NULL
-       OR cc.embedding IS NULL
-       OR cc.embedding_model IS NULL
-       OR cc.embedding_model <> ${EMBED_MODEL}
-  `);
+export async function countPendingBackfillDocs(
+  options: { force?: boolean } = {},
+): Promise<{ docs: number; chunks: number }> {
+  const r = options.force
+    ? await db.execute(sql`
+        SELECT
+          COUNT(DISTINCT cc.document_id)::int AS docs,
+          COUNT(*)::int AS chunks
+        FROM corpus_chunks cc
+      `)
+    : await db.execute(sql`
+        SELECT
+          COUNT(DISTINCT cc.document_id)::int AS docs,
+          COUNT(*)::int AS chunks
+        FROM corpus_chunks cc
+        WHERE cc.contextual_summary IS NULL
+           OR cc.embedding IS NULL
+           OR cc.embedding_model IS NULL
+           OR cc.embedding_model <> ${EMBED_MODEL}
+      `);
   const row = r.rows[0] as { docs: number; chunks: number } | undefined;
   return { docs: row?.docs ?? 0, chunks: row?.chunks ?? 0 };
 }
@@ -358,10 +386,11 @@ export async function backfillContextualSummaries(
   options: BackfillOptions = {},
 ): Promise<BackfillProgress> {
   const maxDocs = options.maxDocs ?? BACKFILL_MAX_DOCS_PER_RUN;
+  const force = !!options.force;
   // Snapshot total at the start so progress is measured against a stable denominator
   // even if new documents are uploaded mid-run. New docs added during the run will
   // be picked up by the next invocation (boot or admin-triggered).
-  const initial = await countPendingBackfillDocs();
+  const initial = await countPendingBackfillDocs({ force });
   const progress: BackfillProgress = {
     docsDone: 0,
     totalDocs: initial.docs,
@@ -387,45 +416,123 @@ export async function backfillContextualSummaries(
   // pending chunks would otherwise be counted in every batch it spans, both
   // inflating progress and tripping the maxDocs cap early.
   const seenDocIds = new Set<string>();
+  // Force-mode pagination: the staleness predicate is gone, so a plain LIMIT
+  // query would reselect already-reprocessed rows forever. Use a keyset cursor
+  // (cc.id > lastSeenId ORDER BY cc.id) — bounded by a single value, no
+  // parameter-list growth. corpus_chunks.id is `text PRIMARY KEY`, so the empty
+  // string sorts before all real ids.
+  let lastSeenId = "";
+  // Force-mode failed-chunk recovery: chunks whose embedding came back null in
+  // the main pass are NOT silently skipped. We collect their ids and run a
+  // bounded retry phase after the main keyset scan completes. Plain backfill
+  // mode doesn't need this — failed chunks naturally remain matching the
+  // staleness predicate and get re-pulled on the next loop iteration.
+  const failedChunkIds = new Set<string>();
+
+  const processBatch = async (
+    rows: { id: string; chunk_text: string; metadata: unknown; doc_id: string; filename: string }[],
+  ): Promise<number> => {
+    const byDoc = new Map<string, { id: string; chunk_text: string; filename: string }[]>();
+    for (const row of rows) {
+      const arr = byDoc.get(row.doc_id) ?? [];
+      arr.push({ id: row.id, chunk_text: row.chunk_text, filename: row.filename });
+      byDoc.set(row.doc_id, arr);
+    }
+    let batchUpdated = 0;
+    for (const [docId, chunkRows] of byDoc.entries()) {
+      if (seenDocIds.size >= maxDocs && !seenDocIds.has(docId)) {
+        return batchUpdated;
+      }
+      const { updated, failedIds } = await reembedChunkRows(docId, chunkRows[0].filename, chunkRows);
+      batchUpdated += updated;
+      // Only record failures in force mode — plain backfill self-heals via the
+      // staleness predicate selecting failed rows again.
+      if (force) {
+        for (const id of failedIds) failedChunkIds.add(id);
+      }
+      const isNewDoc = !seenDocIds.has(docId);
+      seenDocIds.add(docId);
+      if (isNewDoc) progress.docsDone += 1;
+      progress.chunksDone += updated;
+      emit();
+    }
+    return batchUpdated;
+  };
 
   try {
     while (seenDocIds.size < maxDocs) {
-      const r = await db.execute(sql`
-        SELECT cc.id, cc.chunk_text, cc.metadata, cd.id AS doc_id, cd.filename
-        FROM corpus_chunks cc
-        JOIN corpus_documents cd ON cc.document_id = cd.id
-        WHERE cc.contextual_summary IS NULL
-           OR cc.embedding IS NULL
-           OR cc.embedding_model IS NULL
-           OR cc.embedding_model <> ${EMBED_MODEL}
-        LIMIT ${BACKFILL_BATCH_SIZE}
-      `);
+      const r = force
+        ? await db.execute(sql`
+            SELECT cc.id, cc.chunk_text, cc.metadata, cd.id AS doc_id, cd.filename
+            FROM corpus_chunks cc
+            JOIN corpus_documents cd ON cc.document_id = cd.id
+            WHERE cc.id > ${lastSeenId}
+            ORDER BY cc.id
+            LIMIT ${BACKFILL_BATCH_SIZE}
+          `)
+        : await db.execute(sql`
+            SELECT cc.id, cc.chunk_text, cc.metadata, cd.id AS doc_id, cd.filename
+            FROM corpus_chunks cc
+            JOIN corpus_documents cd ON cc.document_id = cd.id
+            WHERE cc.contextual_summary IS NULL
+               OR cc.embedding IS NULL
+               OR cc.embedding_model IS NULL
+               OR cc.embedding_model <> ${EMBED_MODEL}
+            LIMIT ${BACKFILL_BATCH_SIZE}
+          `);
       const rows = r.rows as { id: string; chunk_text: string; metadata: unknown; doc_id: string; filename: string }[];
-      if (rows.length === 0) {
-        if (progress.chunksDone === 0) logger.info("Backfill: nothing to do");
-        else logger.info({ docs: progress.docsDone, chunks: progress.chunksDone }, "Backfill: complete");
-        return progress;
+      if (rows.length === 0) break;
+      logger.info(
+        { batch: rows.length, soFarDocs: progress.docsDone, force },
+        "Backfill: re-processing batch",
+      );
+      const batchUpdated = await processBatch(rows);
+      // Detect total-outage on a non-empty batch (every row failed to update)
+      // and abort with a clear error so admins/boot don't loop forever. This
+      // commonly happens when the embedding API is misconfigured or down — the
+      // generateEmbeddingsBatch call returns null per-row and rows would
+      // otherwise be reselected on the next iteration (in plain mode) or skipped
+      // permanently (in force mode without this guard).
+      if (batchUpdated === 0) {
+        throw new Error(
+          `Backfill made no progress on a ${rows.length}-row batch — likely an embedding API outage or misconfiguration. Aborting to avoid an infinite loop.`,
+        );
       }
-      logger.info({ batch: rows.length, soFarDocs: progress.docsDone }, "Backfill: re-processing batch");
-      const byDoc = new Map<string, { id: string; chunk_text: string; filename: string }[]>();
-      for (const row of rows) {
-        const arr = byDoc.get(row.doc_id) ?? [];
-        arr.push({ id: row.id, chunk_text: row.chunk_text, filename: row.filename });
-        byDoc.set(row.doc_id, arr);
-      }
-      for (const [docId, chunkRows] of byDoc.entries()) {
-        if (seenDocIds.size >= maxDocs && !seenDocIds.has(docId)) {
-          logger.info({ cap: maxDocs }, "Backfill: per-run cap reached, will resume next run");
-          return progress;
-        }
-        await reembedChunkRows(docId, chunkRows[0].filename, chunkRows);
-        const isNewDoc = !seenDocIds.has(docId);
-        seenDocIds.add(docId);
-        if (isNewDoc) progress.docsDone += 1;
-        progress.chunksDone += chunkRows.length;
-        emit();
-      }
+      // Advance keyset cursor even when some rows failed — those failed ids are
+      // recorded in failedChunkIds and retried in the bounded phase below.
+      if (force) lastSeenId = rows[rows.length - 1].id;
     }
+
+    // Force-mode bounded retry phase: re-attempt every chunk that came back
+    // empty in the main pass. Bounded by failedChunkIds.size, fed in chunks of
+    // BACKFILL_BATCH_SIZE so the IN-list never exceeds Postgres' bind limit.
+    if (force && failedChunkIds.size > 0) {
+      const initialFailed = failedChunkIds.size;
+      logger.warn({ failed: initialFailed }, "Backfill: retrying chunks that failed in main pass");
+      const idsToRetry = Array.from(failedChunkIds);
+      failedChunkIds.clear();
+      for (let offset = 0; offset < idsToRetry.length; offset += BACKFILL_BATCH_SIZE) {
+        const batchIds = idsToRetry.slice(offset, offset + BACKFILL_BATCH_SIZE);
+        const r = await db.execute(sql`
+          SELECT cc.id, cc.chunk_text, cc.metadata, cd.id AS doc_id, cd.filename
+          FROM corpus_chunks cc
+          JOIN corpus_documents cd ON cc.document_id = cd.id
+          WHERE cc.id IN (${sql.join(batchIds.map((id) => sql`${id}`), sql`, `)})
+        `);
+        const rows = r.rows as { id: string; chunk_text: string; metadata: unknown; doc_id: string; filename: string }[];
+        if (rows.length === 0) continue;
+        await processBatch(rows);
+      }
+      if (failedChunkIds.size > 0) {
+        throw new Error(
+          `${failedChunkIds.size} of ${initialFailed} chunks still failed after retry — embedding API likely degraded. Re-trigger the job to retry the remaining chunks.`,
+        );
+      }
+      logger.info({ recovered: initialFailed }, "Backfill: retry phase recovered all failed chunks");
+    }
+
+    if (progress.chunksDone === 0) logger.info("Backfill: nothing to do");
+    else logger.info({ docs: progress.docsDone, chunks: progress.chunksDone }, "Backfill: complete");
     return progress;
   } catch (err) {
     logger.warn({ err }, "Backfill failed");

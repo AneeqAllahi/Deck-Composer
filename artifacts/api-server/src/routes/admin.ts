@@ -38,14 +38,20 @@ router.use("/admin/rag", adminGuard);
  * with status 200 (so admins polling the trigger always have something to
  * watch); the body's `alreadyRunning` flag tells them which case happened.
  *
- * Body: { maxDocs?: number } — optional cap; defaults to draining the backlog.
+ * Body:
+ *   - maxDocs?: number — optional cap; defaults to draining the backlog.
+ *   - force?:  boolean — when true, every chunk is re-embedded regardless of
+ *     the embedding_model staleness check. Use this after a context-model
+ *     upgrade (operators have changed RAG_CONTEXT_MODEL) since context-summary
+ *     freshness isn't tracked at the row level.
  */
 router.post("/admin/rag/reembed", async (req, res) => {
   try {
     const maxDocs = typeof req.body?.maxDocs === "number" && req.body.maxDocs > 0
       ? Math.floor(req.body.maxDocs)
       : undefined;
-    const { job, alreadyRunning } = startReembedJob({ maxDocs });
+    const force = req.body?.force === true;
+    const { job, alreadyRunning } = startReembedJob({ maxDocs, force });
     return res.status(alreadyRunning ? 200 : 202).json({ jobId: job.id, alreadyRunning, job });
   } catch (err) {
     req.log.error({ err }, "Failed to start re-embed job");

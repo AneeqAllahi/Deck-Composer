@@ -53,13 +53,19 @@ export function activeJob(): ReembedJob | null {
 }
 
 /**
- * Start a re-embed job in the background and return immediately. Returns null
- * (without starting a new job) if one is already running — admins should poll
- * the existing job instead. If `force` is true, an existing running job is
- * NOT cancelled (we have no preemption) but a parallel job is still refused
- * since concurrent backfills would compete for the same chunk rows.
+ * Start a re-embed job in the background and return immediately. If a job is
+ * already running, returns that job with alreadyRunning=true (admins should
+ * poll it rather than expecting a new one) — concurrent backfills would
+ * compete for the same chunk rows so we explicitly refuse parallel runs.
+ *
+ * Options:
+ * - `maxDocs` caps the number of distinct documents this run will process.
+ *   Defaults to draining the entire backlog (Number.MAX_SAFE_INTEGER).
+ * - `force` re-embeds every chunk regardless of staleness — needed when the
+ *   context model is upgraded (the default predicate only catches embedding-
+ *   model changes via the embedding_model column).
  */
-export function startReembedJob(opts: { maxDocs?: number } = {}): {
+export function startReembedJob(opts: { maxDocs?: number; force?: boolean } = {}): {
   job: ReembedJob;
   alreadyRunning: boolean;
 } {
@@ -95,6 +101,7 @@ export function startReembedJob(opts: { maxDocs?: number } = {}): {
       // the boot-time per-run cap) — that's the whole point of the admin endpoint.
       const finalProgress = await backfillContextualSummaries({
         maxDocs: opts.maxDocs ?? Number.MAX_SAFE_INTEGER,
+        force: opts.force,
         onProgress,
       });
       job.docsDone = finalProgress.docsDone;
