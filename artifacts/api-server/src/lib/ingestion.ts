@@ -1,17 +1,34 @@
 import { db } from "@workspace/db";
-import { corpusChunksTable, corpusDocumentsTable, styleDnaTable } from "@workspace/db";
+import {
+  corpusChunksTable,
+  corpusDocumentsTable,
+  corpusDocumentPagesTable,
+  styleDnaTable,
+} from "@workspace/db";
 import { eq, sql } from "drizzle-orm";
+import { randomUUID } from "crypto";
 import {
   chunkPdfText,
   chunksFromPptxSlides,
   extractPdfText,
   extractPptxStructured,
+  extractPptxThumbnail,
+  renderPdfPagesToPng,
   type RawChunk,
 } from "./chunker.js";
 import { generateEmbeddingsBatch, EMBED_MODEL } from "./embeddings.js";
 import { contextualizeChunks, summarizeDocument } from "./contextualizer.js";
-import { extractStyleDnaFromText } from "./styleDna.js";
+import { extractStyleDnaFromTextAndImages, type VisionImageInput } from "./styleDna.js";
+import { ObjectStorageService } from "./objectStorage.js";
 import { logger } from "./logger.js";
+
+const MAX_PDF_RENDER_PAGES = Number(process.env.RAG_STYLE_DNA_MAX_PDF_PAGES ?? "6");
+// Hard cap on combined base64-encoded image bytes sent to the vision model.
+// Prevents huge brand-guideline PDFs from blowing up the request payload / token cost.
+const MAX_VISION_TOTAL_BYTES = Number(
+  process.env.RAG_STYLE_DNA_MAX_VISION_BYTES ?? `${8 * 1024 * 1024}`,
+);
+const objectStorage = new ObjectStorageService();
 
 const INGEST_BATCH = 20;
 
@@ -27,6 +44,85 @@ export type IngestionParams = {
   projectId: string | null;
   buffer: Buffer;
 };
+
+async function renderAndStorePages(
+  documentId: string,
+  fileType: "pdf" | "pptx",
+  buffer: Buffer,
+): Promise<VisionImageInput[]> {
+  const pages: { pageIndex: number; data: Buffer; mimeType: string; width?: number; height?: number }[] = [];
+
+  if (fileType === "pdf") {
+    const rendered = await renderPdfPagesToPng(buffer, MAX_PDF_RENDER_PAGES);
+    for (const p of rendered) {
+      pages.push({ pageIndex: p.pageIndex, data: p.png, mimeType: "image/png", width: p.width, height: p.height });
+    }
+  } else {
+    const thumb = await extractPptxThumbnail(buffer);
+    if (thumb) {
+      pages.push({ pageIndex: 1, data: thumb.data, mimeType: thumb.contentType });
+    }
+  }
+
+  if (pages.length === 0) return [];
+
+  // Upload to object storage and persist a row per page.
+  const visionImages: VisionImageInput[] = [];
+  const rowsToInsert: typeof corpusDocumentPagesTable.$inferInsert[] = [];
+  let visionBytesUsed = 0;
+
+  for (const p of pages) {
+    let objectPath: string;
+    try {
+      objectPath = await objectStorage.uploadBuffer(p.data, p.mimeType);
+    } catch (err) {
+      logger.warn({ err, documentId, pageIndex: p.pageIndex }, "Failed to upload page image to object storage");
+      continue;
+    }
+    rowsToInsert.push({
+      id: randomUUID(),
+      documentId,
+      pageIndex: p.pageIndex,
+      objectPath,
+      mimeType: p.mimeType,
+      width: p.width ?? null,
+      height: p.height ?? null,
+    });
+    // Pass to vision via base64 data URL — but cap the total payload so an unusually
+    // large brand guideline can't trigger a huge model request. We still persist
+    // every uploaded page so the frontend can show the full thumbnail strip.
+    const base64 = p.data.toString("base64");
+    const dataUrlBytes = base64.length + 32;
+    if (visionBytesUsed + dataUrlBytes <= MAX_VISION_TOTAL_BYTES) {
+      visionImages.push({ dataUrl: `data:${p.mimeType};base64,${base64}` });
+      visionBytesUsed += dataUrlBytes;
+    }
+  }
+
+  if (rowsToInsert.length > 0) {
+    // Replace any prior page set for this document (e.g. on reprocess). Capture the
+    // old object paths first so we can clean up the orphaned GCS blobs after the swap.
+    const prior = await db
+      .select({ objectPath: corpusDocumentPagesTable.objectPath })
+      .from(corpusDocumentPagesTable)
+      .where(eq(corpusDocumentPagesTable.documentId, documentId));
+    await db.delete(corpusDocumentPagesTable).where(eq(corpusDocumentPagesTable.documentId, documentId));
+    await db.insert(corpusDocumentPagesTable).values(rowsToInsert);
+    if (prior.length > 0) {
+      // Best-effort cleanup, never blocks ingestion.
+      void Promise.allSettled(prior.map((r) => objectStorage.deleteObject(r.objectPath))).then(
+        (results) => {
+          const failed = results.filter((r) => r.status === "rejected").length;
+          if (failed > 0) {
+            logger.warn({ documentId, failed }, "Failed to delete some prior page blobs");
+          }
+        },
+      );
+    }
+  }
+
+  return visionImages;
+}
 
 async function setStatus(documentId: string, status: string): Promise<void> {
   await db
@@ -107,9 +203,22 @@ export async function ingestDocument(params: IngestionParams): Promise<void> {
       .set({ chunkCount: embedded, status: "ready" })
       .where(eq(corpusDocumentsTable.id, documentId));
 
+    // Visual brand inputs: render thumbnail/page images for brand-guideline uploads,
+    // store them in object storage, then run a vision-augmented Style DNA extraction.
     if (kind === "brand-guideline" && projectId) {
+      let visionImages: VisionImageInput[] = [];
       try {
-        const styleDna = await extractStyleDnaFromText(filename, rawText);
+        visionImages = await renderAndStorePages(documentId, fileType, buffer);
+        logger.info(
+          { documentId, pages: visionImages.length },
+          "Brand-guideline page images rendered and stored",
+        );
+      } catch (err) {
+        logger.warn({ err, documentId }, "Page rendering failed (Style DNA will fall back to text-only)");
+      }
+
+      try {
+        const styleDna = await extractStyleDnaFromTextAndImages(filename, rawText, visionImages);
         if (styleDna) {
           await db
             .insert(styleDnaTable)
@@ -127,7 +236,10 @@ export async function ingestDocument(params: IngestionParams): Promise<void> {
                 updatedAt: new Date(),
               },
             });
-          logger.info({ projectId, documentId }, "Style DNA extracted and stored");
+          logger.info(
+            { projectId, documentId, visionImages: visionImages.length },
+            "Style DNA extracted and stored",
+          );
         }
       } catch (err) {
         logger.warn({ err, documentId }, "Style DNA extraction failed (document still indexed)");

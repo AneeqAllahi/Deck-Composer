@@ -268,3 +268,62 @@ export async function extractPdfText(buffer: Buffer): Promise<string> {
   const data = await pdfParse.default(buffer);
   return data.text;
 }
+
+export type RenderedPage = {
+  pageIndex: number; // 1-based
+  png: Buffer;
+  width?: number;
+  height?: number;
+};
+
+/**
+ * Render the first N PDF pages to PNG buffers. Returns [] on failure rather than throwing
+ * so a malformed PDF cannot break the entire ingestion pipeline.
+ */
+export async function renderPdfPagesToPng(
+  buffer: Buffer,
+  maxPages = 6,
+): Promise<RenderedPage[]> {
+  try {
+    const mod = await import("pdf-to-png-converter");
+    const pagesToProcess = Array.from({ length: maxPages }, (_, i) => i + 1);
+    const pages = await mod.pdfToPng(buffer, {
+      viewportScale: 1.5,
+      disableFontFace: true,
+      useSystemFonts: false,
+      pagesToProcess,
+    });
+    const out: RenderedPage[] = [];
+    for (let i = 0; i < pages.length; i++) {
+      const p = pages[i];
+      if (!p.content) continue;
+      out.push({ pageIndex: i + 1, png: p.content, width: p.width, height: p.height });
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Extract the embedded PPTX thumbnail (single image, typically the title slide) from
+ * docProps/thumbnail.{jpeg,jpg,png}. Returns null when no thumbnail is present.
+ */
+export async function extractPptxThumbnail(
+  buffer: Buffer,
+): Promise<{ contentType: string; data: Buffer } | null> {
+  try {
+    const AdmZip = (await import("adm-zip")).default;
+    const zip = new AdmZip(buffer);
+    for (const ext of ["jpeg", "jpg", "png"] as const) {
+      const entry = zip.getEntry(`docProps/thumbnail.${ext}`);
+      if (entry) {
+        const ct = ext === "png" ? "image/png" : "image/jpeg";
+        return { contentType: ct, data: entry.getData() };
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}

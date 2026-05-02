@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { logger } from "./logger.js";
 
 const EXTRACT_MODEL = process.env.RAG_STYLE_DNA_MODEL ?? "gpt-5.2";
+const VISION_MODEL = process.env.RAG_STYLE_DNA_VISION_MODEL ?? EXTRACT_MODEL;
 
 const STYLE_DNA_SYSTEM_PROMPT = `You are a senior brand designer and copy strategist. You read brand guidelines and presentation decks and extract a structured "Style DNA" profile a downstream slide-generation model can follow.
 
@@ -70,6 +71,148 @@ Extract the Style DNA JSON now.`,
     logger.warn({ err }, "Style DNA extraction failed");
     return null;
   }
+}
+
+const VISION_SYSTEM_PROMPT = `You are a senior brand designer. You will look at rendered pages of a brand-guideline or presentation document and extract a VISUAL Style DNA profile in JSON. Focus only on what is VISIBLE in the images. Do not invent values you can't see.
+
+Output a SINGLE JSON object using this schema (omit any field you can't infer):
+{
+  "palette": [{ "name": "Primary Navy", "hex": "#1E293B", "role": "primary|secondary|accent|surface|text", "usage": "Where it appears." }],
+  "typography": {
+    "heading": { "family": "...", "weight": "...", "case": "Title Case|UPPERCASE|lowercase" },
+    "body":    { "family": "..." }
+  },
+  "signatureLayouts": [{ "name": "Hero left, image right", "description": "Large heading on left half, full-bleed photo on right half." }],
+  "logoRules": ["Wordmark always white when on dark photos."]
+}
+
+Identify dominant colors as 6-character hex codes. If you can identify font families with reasonable confidence (well-known fonts like Inter, Helvetica, Playfair Display, etc.) include them; otherwise omit. Output ONLY the JSON object, no preamble, no markdown fences.`;
+
+export type VisionImageInput = {
+  /** data URL like "data:image/png;base64,iVBOR..." */
+  dataUrl: string;
+};
+
+async function extractVisualStyleDna(
+  documentTitle: string,
+  images: VisionImageInput[],
+): Promise<StyleDnaData | null> {
+  if (images.length === 0) return null;
+  try {
+    const response = await openai.chat.completions.create({
+      model: VISION_MODEL,
+      max_completion_tokens: 2048,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: VISION_SYSTEM_PROMPT },
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: `Document title: ${documentTitle}\n\nThe following ${images.length} image(s) are rendered pages from the document. Extract the visual Style DNA JSON now.`,
+            },
+            ...images.map(
+              (img) =>
+                ({
+                  type: "image_url" as const,
+                  image_url: { url: img.dataUrl },
+                }),
+            ),
+          ],
+        },
+      ],
+    });
+    const raw = response.choices[0]?.message?.content?.trim() ?? "";
+    if (!raw) return null;
+    try {
+      return sanitizeStyleDna(JSON.parse(raw) as StyleDnaData);
+    } catch {
+      const m = raw.match(/\{[\s\S]*\}/);
+      if (m) {
+        try {
+          return sanitizeStyleDna(JSON.parse(m[0]) as StyleDnaData);
+        } catch {
+          return null;
+        }
+      }
+      return null;
+    }
+  } catch (err) {
+    logger.warn({ err }, "Style DNA vision pass failed (continuing with text-only)");
+    return null;
+  }
+}
+
+function mergeStyleDna(
+  textDna: StyleDnaData | null,
+  visualDna: StyleDnaData | null,
+): StyleDnaData | null {
+  if (!textDna && !visualDna) return null;
+  if (!visualDna) return textDna;
+  if (!textDna) return visualDna;
+
+  // Vision is authoritative for things that are inherently visual:
+  // palette, typography (font family/weight/case), signature layouts, logo rules.
+  // Text is authoritative for voice, lexicon, rules — those come from prose, not pixels.
+  const merged: StyleDnaData = {
+    palette: visualDna.palette?.length ? visualDna.palette : textDna.palette,
+    typography: {
+      heading: { ...textDna.typography?.heading, ...visualDna.typography?.heading },
+      body: { ...textDna.typography?.body, ...visualDna.typography?.body },
+      caption: { ...textDna.typography?.caption, ...visualDna.typography?.caption },
+    },
+    voice: textDna.voice,
+    lexicon: textDna.lexicon,
+    signatureLayouts: dedupeByName([
+      ...(visualDna.signatureLayouts ?? []),
+      ...(textDna.signatureLayouts ?? []),
+    ]).slice(0, 8),
+    logoRules: Array.from(
+      new Set([...(visualDna.logoRules ?? []), ...(textDna.logoRules ?? [])]),
+    ).slice(0, 8),
+    rules: textDna.rules,
+  };
+  // Drop empty typography slots so sanitize doesn't inject {} entries
+  if (merged.typography) {
+    for (const k of ["heading", "body", "caption"] as const) {
+      const slot = merged.typography[k];
+      if (slot && Object.values(slot).every((v) => v === undefined)) {
+        delete merged.typography[k];
+      }
+    }
+    if (Object.keys(merged.typography).length === 0) delete merged.typography;
+  }
+  return sanitizeStyleDna(merged);
+}
+
+function dedupeByName<T extends { name: string }>(arr: T[]): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const item of arr) {
+    const key = (item.name ?? "").toLowerCase().trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+  return out;
+}
+
+/**
+ * Combined extractor: runs both the text pass (original prompt) and a vision pass
+ * over rendered page images, then merges the two profiles. Either pass may return
+ * null without breaking the other.
+ */
+export async function extractStyleDnaFromTextAndImages(
+  documentTitle: string,
+  text: string,
+  images: VisionImageInput[],
+): Promise<StyleDnaData | null> {
+  const [textDna, visualDna] = await Promise.all([
+    extractStyleDnaFromText(documentTitle, text),
+    extractVisualStyleDna(documentTitle, images),
+  ]);
+  return mergeStyleDna(textDna, visualDna);
 }
 
 function sanitizeStyleDna(data: StyleDnaData): StyleDnaData {

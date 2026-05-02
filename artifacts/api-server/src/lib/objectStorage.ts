@@ -99,6 +99,45 @@ export class ObjectStorageService {
     return signObjectURL({ bucketName, objectName, method: "PUT", ttlSec: 900 });
   }
 
+  /**
+   * Server-side upload of an in-memory buffer to the private object dir.
+   * Stores at ${PRIVATE_OBJECT_DIR}/uploads/<uuid> and returns the canonical
+   * /objects/uploads/<uuid> path so that getObjectEntityFile() — which resolves
+   * /objects/<rest> -> ${PRIVATE_OBJECT_DIR}/<rest> — can read it back.
+   */
+  async uploadBuffer(buffer: Buffer, contentType: string): Promise<string> {
+    // Trim any trailing slash so the joined path matches the read-side normalization
+    // in getObjectEntityFile (which joins privateObjectDir + "/" + entityId without
+    // collapsing duplicate slashes — a leading "//" would land at a different object).
+    const privateObjectDir = this.getPrivateObjectDir().replace(/\/+$/, "");
+    const objectId = randomUUID();
+    const relPath = `uploads/${objectId}`;
+    const fullPath = `${privateObjectDir}/${relPath}`;
+    const { bucketName, objectName } = parseObjectPath(fullPath);
+    const bucket = objectStorageClient.bucket(bucketName);
+    const file = bucket.file(objectName);
+    await file.save(buffer, {
+      contentType,
+      resumable: false,
+      metadata: { contentType, cacheControl: "private, max-age=31536000, immutable" },
+    });
+    return `/objects/${relPath}`;
+  }
+
+  /**
+   * Best-effort delete of an /objects/<rest> path. Swallows ObjectNotFoundError so
+   * cleanup of already-missing blobs doesn't break callers.
+   */
+  async deleteObject(objectPath: string): Promise<void> {
+    try {
+      const file = await this.getObjectEntityFile(objectPath);
+      await file.delete({ ignoreNotFound: true });
+    } catch (err) {
+      if (err instanceof ObjectNotFoundError) return;
+      throw err;
+    }
+  }
+
   async getObjectEntityFile(objectPath: string): Promise<File> {
     if (!objectPath.startsWith("/objects/")) {
       throw new ObjectNotFoundError();

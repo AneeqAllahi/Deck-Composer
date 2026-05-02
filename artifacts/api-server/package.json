@@ -24,6 +24,7 @@
     "multer": "^2.1.1",
     "openai": "^6.34.0",
     "pdf-parse": "^1.1.1",
+    "pdf-to-png-converter": "^4.0.0",
     "pino": "^9",
     "pino-http": "^10",
     "pptxgenjs": "^3.12.0"

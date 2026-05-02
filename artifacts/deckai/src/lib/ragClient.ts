@@ -56,6 +56,38 @@ export async function saveStyleDna(projectId: string, data: StyleDnaData): Promi
   return res.json();
 }
 
+export type StyleDnaPage = {
+  id: string;
+  documentId: string;
+  documentName: string;
+  pageIndex: number;
+  objectPath: string;
+  mimeType: string;
+  width: number | null;
+  height: number | null;
+};
+
+export type StyleDnaPagesResponse = {
+  projectId: string;
+  pages: StyleDnaPage[];
+};
+
+export async function getStyleDnaPages(projectId: string): Promise<StyleDnaPagesResponse> {
+  const res = await fetch(`${API_BASE}/style-dna/${projectId}/pages`);
+  if (!res.ok) throw new Error(`Get style DNA pages failed: ${res.status}`);
+  return res.json();
+}
+
+/**
+ * Convert an /objects/<rest> path returned by the server into a fetchable URL via the
+ * api-server's storage proxy. The storage router lives under the same /api mount as
+ * the rest of the API, so the actual path is /api/storage/objects/<rest>.
+ */
+export function styleDnaPageImageUrl(objectPath: string): string {
+  const stripped = objectPath.replace(/^\/objects\//, "");
+  return `${API_BASE}/storage/objects/${stripped}`;
+}
+
 export async function extractStyleDna(projectId: string, sourceDocumentId?: string): Promise<StyleDnaResponse> {
   const res = await fetch(`${API_BASE}/style-dna/${projectId}/extract`, {
     method: "POST",

@@ -10,8 +10,11 @@ import { useToast } from "@/hooks/use-toast";
 import {
   extractStyleDna,
   getStyleDna,
+  getStyleDnaPages,
   saveStyleDna,
+  styleDnaPageImageUrl,
   type StyleDnaData,
+  type StyleDnaPage,
   type StyleDnaResponse,
 } from "@/lib/ragClient";
 
@@ -34,12 +37,19 @@ export function StyleDnaEditor({ projectId }: Props) {
   const [saving, setSaving] = useState(false);
   const [meta, setMeta] = useState<{ source: string; updatedAt: string | null }>({ source: "default", updatedAt: null });
   const [data, setData] = useState<StyleDnaData>({});
+  const [pages, setPages] = useState<StyleDnaPage[]>([]);
 
   const load = async () => {
     setLoading(true);
     try {
       const r = await getStyleDna(projectId);
       applyResponse(r);
+      try {
+        const p = await getStyleDnaPages(projectId);
+        setPages(p.pages);
+      } catch {
+        setPages([]);
+      }
     } catch {
       toast({ title: "Failed to load Style DNA", variant: "destructive" });
     } finally {
@@ -125,6 +135,39 @@ export function StyleDnaEditor({ projectId }: Props) {
         </div>
       </CardHeader>
       <CardContent className="space-y-6">
+        {pages.length > 0 && (
+          <section>
+            <Label className="text-xs uppercase tracking-wide text-muted-foreground">
+              Visual sources
+            </Label>
+            <div className="text-[11px] text-muted-foreground mt-1 mb-2">
+              Page renders the vision model used to detect palette, typography, and layouts.
+            </div>
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {pages.map((p) => (
+                <a
+                  key={p.id}
+                  href={styleDnaPageImageUrl(p.objectPath)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex-shrink-0 w-28 border rounded overflow-hidden bg-muted hover:ring-2 hover:ring-primary transition"
+                  title={`${p.documentName} — page ${p.pageIndex}`}
+                >
+                  <img
+                    src={styleDnaPageImageUrl(p.objectPath)}
+                    alt={`${p.documentName} page ${p.pageIndex}`}
+                    className="w-full h-36 object-cover object-top bg-white"
+                    loading="lazy"
+                  />
+                  <div className="text-[10px] text-muted-foreground px-1 py-0.5 truncate">
+                    p.{p.pageIndex}
+                  </div>
+                </a>
+              ))}
+            </div>
+          </section>
+        )}
+
         <section>
           <div className="flex items-center justify-between mb-2">
             <Label className="text-xs uppercase tracking-wide text-muted-foreground">Palette</Label>

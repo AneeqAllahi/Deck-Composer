@@ -97,6 +97,24 @@ export async function ensurePostgresExtensions(): Promise<void> {
       ON corpus_chunks (document_id)
     `);
 
+    // Visual brand inputs: rendered page images for brand-guideline / exemplar uploads
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS corpus_document_pages (
+        id text PRIMARY KEY,
+        document_id text NOT NULL REFERENCES corpus_documents(id) ON DELETE CASCADE,
+        page_index integer NOT NULL,
+        object_path text NOT NULL,
+        mime_type text NOT NULL,
+        width integer,
+        height integer,
+        created_at timestamp NOT NULL DEFAULT now()
+      )
+    `);
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS corpus_document_pages_document_id_idx
+      ON corpus_document_pages (document_id)
+    `);
+
     logger.info("Postgres RAG extensions and indexes ensured");
   } catch (err) {
     logger.warn({ err }, "Failed to ensure RAG indexes (non-fatal)");

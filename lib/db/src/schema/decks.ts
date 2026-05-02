@@ -86,6 +86,21 @@ export type InsertCorpusDocument = z.infer<typeof insertCorpusDocumentSchema>;
 export type CorpusDocument = typeof corpusDocumentsTable.$inferSelect;
 export type CorpusChunk = typeof corpusChunksTable.$inferSelect;
 
+export const corpusDocumentPagesTable = pgTable("corpus_document_pages", {
+  id: text("id").primaryKey(),
+  documentId: text("document_id")
+    .notNull()
+    .references(() => corpusDocumentsTable.id, { onDelete: "cascade" }),
+  pageIndex: integer("page_index").notNull(),
+  objectPath: text("object_path").notNull(),
+  mimeType: text("mime_type").notNull(),
+  width: integer("width"),
+  height: integer("height"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export type CorpusDocumentPage = typeof corpusDocumentPagesTable.$inferSelect;
+
 export type StyleDnaPalette = {
   name: string;
   hex: string;

@@ -1,9 +1,21 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { styleDnaTable, corpusDocumentsTable, projectsTable } from "@workspace/db";
+import {
+  styleDnaTable,
+  corpusDocumentsTable,
+  corpusDocumentPagesTable,
+  projectsTable,
+} from "@workspace/db";
 import type { StyleDnaData } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
-import { extractStyleDnaFromText, getStyleDnaForProject } from "../lib/styleDna.js";
+import { eq, and, asc, inArray } from "drizzle-orm";
+import {
+  extractStyleDnaFromTextAndImages,
+  getStyleDnaForProject,
+  type VisionImageInput,
+} from "../lib/styleDna.js";
+import { ObjectStorageService } from "../lib/objectStorage.js";
+
+const objectStorage = new ObjectStorageService();
 
 const router = Router();
 
@@ -93,7 +105,35 @@ router.post("/style-dna/:projectId/extract", async (req, res) => {
     if (!doc.rawText || doc.rawText.length < 200) {
       return res.status(400).json({ error: "Source document has no extractable text" });
     }
-    const data = await extractStyleDnaFromText(doc.filename, doc.rawText);
+    // Reuse stored page renders (if any) so re-extracts also benefit from the vision pass.
+    const pageRows = await db
+      .select()
+      .from(corpusDocumentPagesTable)
+      .where(eq(corpusDocumentPagesTable.documentId, doc.id))
+      .orderBy(asc(corpusDocumentPagesTable.pageIndex));
+
+    // Match the ingestion-time cap so re-extracts can't blow up the model request
+    // payload (huge brand guidelines could otherwise produce dozens of base64 PNGs).
+    const maxVisionBytes = Number(
+      process.env.RAG_STYLE_DNA_MAX_VISION_BYTES ?? `${8 * 1024 * 1024}`,
+    );
+    const visionImages: VisionImageInput[] = [];
+    let visionBytesUsed = 0;
+    for (const p of pageRows) {
+      try {
+        const file = await objectStorage.getObjectEntityFile(p.objectPath);
+        const [bytes] = await file.download();
+        const base64 = bytes.toString("base64");
+        const dataUrlBytes = base64.length + 32;
+        if (visionBytesUsed + dataUrlBytes > maxVisionBytes) break;
+        visionImages.push({ dataUrl: `data:${p.mimeType};base64,${base64}` });
+        visionBytesUsed += dataUrlBytes;
+      } catch (err) {
+        req.log.warn({ err, pageId: p.id }, "Failed to load page image for re-extract; skipping");
+      }
+    }
+
+    const data = await extractStyleDnaFromTextAndImages(doc.filename, doc.rawText, visionImages);
     if (!data) return res.status(500).json({ error: "Style DNA extraction returned no data" });
 
     await db
@@ -116,6 +156,59 @@ router.post("/style-dna/:projectId/extract", async (req, res) => {
   } catch (err) {
     req.log.error({ err }, "Failed to extract style DNA");
     return res.status(500).json({ error: "Failed to extract style DNA" });
+  }
+});
+
+/**
+ * GET /api/style-dna/:projectId/pages
+ *
+ * Returns the rendered page thumbnails associated with the brand-guideline document(s)
+ * for the given project. Used by the StyleDnaEditor to show a "Visual sources" strip.
+ */
+router.get("/style-dna/:projectId/pages", async (req, res) => {
+  try {
+    const docs = await db
+      .select({ id: corpusDocumentsTable.id, filename: corpusDocumentsTable.filename })
+      .from(corpusDocumentsTable)
+      .where(
+        and(
+          eq(corpusDocumentsTable.projectId, req.params.projectId),
+          eq(corpusDocumentsTable.kind, "brand-guideline"),
+        ),
+      );
+
+    if (docs.length === 0) {
+      return res.json({ projectId: req.params.projectId, pages: [] });
+    }
+
+    const docIds = docs.map((d) => d.id);
+    const docNames = new Map(docs.map((d) => [d.id, d.filename]));
+
+    const pages = await db
+      .select()
+      .from(corpusDocumentPagesTable)
+      .where(inArray(corpusDocumentPagesTable.documentId, docIds))
+      .orderBy(
+        asc(corpusDocumentPagesTable.documentId),
+        asc(corpusDocumentPagesTable.pageIndex),
+      );
+
+    return res.json({
+      projectId: req.params.projectId,
+      pages: pages.map((p) => ({
+        id: p.id,
+        documentId: p.documentId,
+        documentName: docNames.get(p.documentId) ?? "",
+        pageIndex: p.pageIndex,
+        objectPath: p.objectPath,
+        mimeType: p.mimeType,
+        width: p.width,
+        height: p.height,
+      })),
+    });
+  } catch (err) {
+    req.log.error({ err }, "Failed to list style DNA pages");
+    return res.status(500).json({ error: "Failed to list pages" });
   }
 });
 
