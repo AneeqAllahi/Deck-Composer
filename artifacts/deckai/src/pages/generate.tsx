@@ -2,7 +2,18 @@ import { useForm, useFieldArray, Control } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useLocation } from "wouter";
-import { useGenerateDeck, useListProjects, GenerateDeckBodyNarrativeStructure } from "@workspace/api-client-react";
+import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  useGenerateDeck,
+  useListProjects,
+  useListSlideTemplates,
+  useCreateSlideTemplate,
+  useDeleteSlideTemplate,
+  getListSlideTemplatesQueryKey,
+  GenerateDeckBodyNarrativeStructure,
+  type SlideTemplate,
+} from "@workspace/api-client-react";
 import { useUpload } from "@workspace/object-storage-web";
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -12,8 +23,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { Wand2, Target, AlignLeft, FolderOpen, ListOrdered, ImagePlus, X, Type } from "lucide-react";
+import { Wand2, Target, AlignLeft, FolderOpen, ListOrdered, ImagePlus, X, Type, Save, FolderInput, Trash2 } from "lucide-react";
 
 type GenerationMode = "brief" | "slide-by-slide";
 
@@ -169,6 +182,12 @@ export function GeneratePage() {
   const generateDeck = useGenerateDeck();
   const { toast } = useToast();
   const { data: projects } = useListProjects();
+  const queryClient = useQueryClient();
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [loadDialogOpen, setLoadDialogOpen] = useState(false);
+  const [templateName, setTemplateName] = useState("");
+  const [templateDescription, setTemplateDescription] = useState("");
+  const [scopeToProject, setScopeToProject] = useState(false);
 
   const form = useForm<GenerateFormValues>({
     resolver: zodResolver(generateSchema),
@@ -187,8 +206,85 @@ export function GeneratePage() {
   const mode: GenerationMode = form.watch("mode");
   const slideCount = form.watch("slideCount");
   const slideOutlines = form.watch("slideOutlines");
+  const projectId = form.watch("projectId");
   const slideBySlideEnabled = mode === "slide-by-slide";
   const { fields, replace } = useFieldArray({ control: form.control, name: "slideOutlines" });
+
+  const { data: templates } = useListSlideTemplates(
+    projectId ? { projectId } : undefined,
+  );
+  const createTemplate = useCreateSlideTemplate();
+  const deleteTemplate = useDeleteSlideTemplate();
+
+  const invalidateTemplates = () => {
+    queryClient.invalidateQueries({ queryKey: getListSlideTemplatesQueryKey() });
+    if (projectId) {
+      queryClient.invalidateQueries({ queryKey: getListSlideTemplatesQueryKey({ projectId }) });
+    }
+  };
+
+  const handleSaveTemplate = async () => {
+    if (!templateName.trim()) {
+      toast({ title: "Please give the template a name", variant: "destructive" });
+      return;
+    }
+    const outlines = (form.getValues("slideOutlines") ?? [])
+      .filter((o) => o.guidance.trim().length > 0 || (o.title?.trim().length ?? 0) > 0)
+      .map((o) => ({
+        slideIndex: o.slideIndex,
+        guidance: o.guidance,
+        title: o.title?.trim() ? o.title : undefined,
+      }));
+    if (outlines.length === 0) {
+      toast({ title: "Add at least one slide title or instruction first", variant: "destructive" });
+      return;
+    }
+    try {
+      await createTemplate.mutateAsync({
+        data: {
+          name: templateName.trim(),
+          description: templateDescription.trim(),
+          slideCount: form.getValues("slideCount"),
+          narrativeStructure: form.getValues("narrativeStructure"),
+          outlines,
+          projectId: scopeToProject && projectId ? projectId : null,
+        },
+      });
+      invalidateTemplates();
+      toast({ title: "Template saved" });
+      setSaveDialogOpen(false);
+      setTemplateName("");
+      setTemplateDescription("");
+      setScopeToProject(false);
+    } catch {
+      toast({ title: "Failed to save template", variant: "destructive" });
+    }
+  };
+
+  const handleLoadTemplate = (template: SlideTemplate) => {
+    form.setValue("mode", "slide-by-slide");
+    form.setValue("slideCount", template.slideCount);
+    form.setValue("narrativeStructure", template.narrativeStructure as GenerateDeckBodyNarrativeStructure);
+    const byIndex = new Map(template.outlines.map((o) => [o.slideIndex, o]));
+    replace(Array.from({ length: template.slideCount }, (_, i) => ({
+      slideIndex: i,
+      title: byIndex.get(i)?.title ?? "",
+      guidance: byIndex.get(i)?.guidance ?? "",
+      imageObjectPath: null,
+    })));
+    toast({ title: `Loaded template: ${template.name}` });
+    setLoadDialogOpen(false);
+  };
+
+  const handleDeleteTemplate = async (id: string) => {
+    try {
+      await deleteTemplate.mutateAsync({ id });
+      invalidateTemplates();
+      toast({ title: "Template deleted" });
+    } catch {
+      toast({ title: "Failed to delete template", variant: "destructive" });
+    }
+  };
 
   const handleSlideCountChange = (val: number) => {
     form.setValue("slideCount", val);
@@ -441,9 +537,105 @@ export function GeneratePage() {
 
                 {slideBySlideEnabled && (
                   <div className="space-y-4">
-                    <div className="flex items-center gap-2 text-lg font-medium border-b pb-2">
-                      <ListOrdered className="h-5 w-5 text-primary" />
-                      <h3>Per-Slide Guidance</h3>
+                    <div className="flex items-center justify-between gap-2 text-lg font-medium border-b pb-2">
+                      <div className="flex items-center gap-2">
+                        <ListOrdered className="h-5 w-5 text-primary" />
+                        <h3>Per-Slide Guidance</h3>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Dialog open={loadDialogOpen} onOpenChange={setLoadDialogOpen}>
+                          <DialogTrigger asChild>
+                            <Button type="button" variant="outline" size="sm">
+                              <FolderInput className="h-4 w-4 mr-1.5" />
+                              Load template
+                            </Button>
+                          </DialogTrigger>
+                          <DialogContent className="max-w-lg">
+                            <DialogHeader>
+                              <DialogTitle>Load slide outline template</DialogTitle>
+                              <DialogDescription>
+                                Pick a saved template to populate the per-slide outline.
+                                {projectId ? " Showing global templates and templates scoped to the selected project." : " Select a project above to also see project-scoped templates."}
+                              </DialogDescription>
+                            </DialogHeader>
+                            <div className="max-h-[420px] overflow-y-auto space-y-2 -mx-1 px-1">
+                              {!templates || templates.length === 0 ? (
+                                <p className="text-sm text-muted-foreground py-8 text-center">No templates saved yet.</p>
+                              ) : (
+                                templates.map((t) => (
+                                  <div key={t.id} className="rounded-lg border p-3 flex items-start justify-between gap-3 hover:bg-muted/40">
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <h4 className="font-medium text-sm truncate">{t.name}</h4>
+                                        <span className="text-xs text-muted-foreground font-mono">{t.slideCount} slides</span>
+                                        {t.projectId && (
+                                          <span className="text-[10px] uppercase tracking-wide bg-primary/10 text-primary px-1.5 py-0.5 rounded">Project</span>
+                                        )}
+                                      </div>
+                                      {t.description && <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{t.description}</p>}
+                                      <p className="text-xs text-muted-foreground mt-1">{t.outlines.length} slides specified · {t.narrativeStructure}</p>
+                                    </div>
+                                    <div className="flex flex-col gap-1 flex-shrink-0">
+                                      <Button type="button" size="sm" variant="default" onClick={() => handleLoadTemplate(t)}>Load</Button>
+                                      <Button type="button" size="sm" variant="ghost" onClick={() => handleDeleteTemplate(t.id)} disabled={deleteTemplate.isPending}>
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                      </Button>
+                                    </div>
+                                  </div>
+                                ))
+                              )}
+                            </div>
+                          </DialogContent>
+                        </Dialog>
+                        <Dialog open={saveDialogOpen} onOpenChange={setSaveDialogOpen}>
+                          <DialogTrigger asChild>
+                            <Button type="button" variant="outline" size="sm">
+                              <Save className="h-4 w-4 mr-1.5" />
+                              Save as template
+                            </Button>
+                          </DialogTrigger>
+                          <DialogContent>
+                            <DialogHeader>
+                              <DialogTitle>Save outline as template</DialogTitle>
+                              <DialogDescription>Save this slide-by-slide outline so you can reuse it on future decks.</DialogDescription>
+                            </DialogHeader>
+                            <div className="space-y-3">
+                              <div className="space-y-1.5">
+                                <label className="text-sm font-medium">Name</label>
+                                <Input
+                                  placeholder="e.g. Standard Market Entry Deck"
+                                  value={templateName}
+                                  onChange={(e) => setTemplateName(e.target.value)}
+                                />
+                              </div>
+                              <div className="space-y-1.5">
+                                <label className="text-sm font-medium">Description <span className="text-muted-foreground font-normal">(optional)</span></label>
+                                <Textarea
+                                  placeholder="When to use this template…"
+                                  className="min-h-[60px]"
+                                  value={templateDescription}
+                                  onChange={(e) => setTemplateDescription(e.target.value)}
+                                />
+                              </div>
+                              {projectId && (
+                                <label className="flex items-start gap-2 cursor-pointer">
+                                  <Checkbox checked={scopeToProject} onCheckedChange={(c) => setScopeToProject(c === true)} className="mt-0.5" />
+                                  <div className="text-sm">
+                                    <div className="font-medium">Scope to current project</div>
+                                    <div className="text-xs text-muted-foreground">Only show this template when this project is selected.</div>
+                                  </div>
+                                </label>
+                              )}
+                            </div>
+                            <DialogFooter>
+                              <Button type="button" variant="outline" onClick={() => setSaveDialogOpen(false)}>Cancel</Button>
+                              <Button type="button" onClick={handleSaveTemplate} disabled={createTemplate.isPending}>
+                                {createTemplate.isPending ? "Saving…" : "Save template"}
+                              </Button>
+                            </DialogFooter>
+                          </DialogContent>
+                        </Dialog>
+                      </div>
                     </div>
 
                     <div className="space-y-3">

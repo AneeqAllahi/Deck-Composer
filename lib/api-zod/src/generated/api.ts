@@ -533,6 +533,84 @@ export const DeleteCorpusDocumentParams = zod.object({
 });
 
 /**
+ * @summary List slide templates
+ */
+export const ListSlideTemplatesQueryParams = zod.object({
+  projectId: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "If provided, returns global templates plus templates scoped to this project",
+    ),
+});
+
+export const ListSlideTemplatesResponseItem = zod.object({
+  id: zod.string(),
+  name: zod.string(),
+  description: zod.string(),
+  slideCount: zod.number(),
+  narrativeStructure: zod.enum([
+    "problem-solution",
+    "consulting",
+    "chronological",
+    "mece-pyramid",
+    "executive-summary",
+    "custom",
+  ]),
+  outlines: zod.array(
+    zod.object({
+      slideIndex: zod.number(),
+      title: zod.string().optional(),
+      guidance: zod.string(),
+    }),
+  ),
+  projectId: zod.string().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+export const ListSlideTemplatesResponse = zod.array(
+  ListSlideTemplatesResponseItem,
+);
+
+/**
+ * @summary Save a slide-by-slide outline as a reusable template
+ */
+export const createSlideTemplateBodySlideCountMin = 3;
+export const createSlideTemplateBodySlideCountMax = 30;
+
+export const CreateSlideTemplateBody = zod.object({
+  name: zod.string(),
+  description: zod.string().optional(),
+  slideCount: zod
+    .number()
+    .min(createSlideTemplateBodySlideCountMin)
+    .max(createSlideTemplateBodySlideCountMax),
+  narrativeStructure: zod.enum([
+    "problem-solution",
+    "consulting",
+    "chronological",
+    "mece-pyramid",
+    "executive-summary",
+    "custom",
+  ]),
+  outlines: zod.array(
+    zod.object({
+      slideIndex: zod.number(),
+      title: zod.string().optional(),
+      guidance: zod.string(),
+    }),
+  ),
+  projectId: zod.string().nullish(),
+});
+
+/**
+ * @summary Delete a slide template
+ */
+export const DeleteSlideTemplateParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+/**
  * @summary Request a presigned upload URL
  */
 export const RequestUploadUrlBody = zod.object({

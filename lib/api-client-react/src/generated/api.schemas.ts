@@ -253,6 +253,61 @@ export interface RegenerateSlideBody {
   instruction?: string;
 }
 
+export interface SlideTemplateOutline {
+  slideIndex: number;
+  title?: string;
+  guidance: string;
+}
+
+export type SlideTemplateNarrativeStructure =
+  (typeof SlideTemplateNarrativeStructure)[keyof typeof SlideTemplateNarrativeStructure];
+
+export const SlideTemplateNarrativeStructure = {
+  "problem-solution": "problem-solution",
+  consulting: "consulting",
+  chronological: "chronological",
+  "mece-pyramid": "mece-pyramid",
+  "executive-summary": "executive-summary",
+  custom: "custom",
+} as const;
+
+export interface SlideTemplate {
+  id: string;
+  name: string;
+  description: string;
+  slideCount: number;
+  narrativeStructure: SlideTemplateNarrativeStructure;
+  outlines: SlideTemplateOutline[];
+  projectId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type CreateSlideTemplateBodyNarrativeStructure =
+  (typeof CreateSlideTemplateBodyNarrativeStructure)[keyof typeof CreateSlideTemplateBodyNarrativeStructure];
+
+export const CreateSlideTemplateBodyNarrativeStructure = {
+  "problem-solution": "problem-solution",
+  consulting: "consulting",
+  chronological: "chronological",
+  "mece-pyramid": "mece-pyramid",
+  "executive-summary": "executive-summary",
+  custom: "custom",
+} as const;
+
+export interface CreateSlideTemplateBody {
+  name: string;
+  description?: string;
+  /**
+   * @minimum 3
+   * @maximum 30
+   */
+  slideCount: number;
+  narrativeStructure: CreateSlideTemplateBodyNarrativeStructure;
+  outlines: SlideTemplateOutline[];
+  projectId?: string | null;
+}
+
 export interface DeckStats {
   totalDecks: number;
   totalCorpusDocuments: number;
@@ -312,5 +367,12 @@ export type ListCorpusDocumentsParams = {
 export type UploadCorpusDocumentBody = {
   file: Blob;
   /** Optional project to associate the document with */
+  projectId?: string;
+};
+
+export type ListSlideTemplatesParams = {
+  /**
+   * If provided, returns global templates plus templates scoped to this project
+   */
   projectId?: string;
 };

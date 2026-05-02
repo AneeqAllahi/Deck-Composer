@@ -21,16 +21,19 @@ import type {
   BrandProfile,
   CorpusDocument,
   CreateProjectBody,
+  CreateSlideTemplateBody,
   Deck,
   DeckStats,
   DeckSummary,
   GenerateDeckBody,
   HealthStatus,
   ListCorpusDocumentsParams,
+  ListSlideTemplatesParams,
   Project,
   RegenerateSlideBody,
   RequestUploadUrlBody,
   RequestUploadUrlResponse,
+  SlideTemplate,
   UpdateBrandProfileBody,
   UpdateProjectBody,
   UpdateProjectLogoBody,
@@ -1799,6 +1802,273 @@ export const useDeleteCorpusDocument = <
   TContext
 > => {
   return useMutation(getDeleteCorpusDocumentMutationOptions(options));
+};
+
+/**
+ * @summary List slide templates
+ */
+export const getListSlideTemplatesUrl = (params?: ListSlideTemplatesParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/slide-templates?${stringifiedParams}`
+    : `/api/slide-templates`;
+};
+
+export const listSlideTemplates = async (
+  params?: ListSlideTemplatesParams,
+  options?: RequestInit,
+): Promise<SlideTemplate[]> => {
+  return customFetch<SlideTemplate[]>(getListSlideTemplatesUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListSlideTemplatesQueryKey = (
+  params?: ListSlideTemplatesParams,
+) => {
+  return [`/api/slide-templates`, ...(params ? [params] : [])] as const;
+};
+
+export const getListSlideTemplatesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listSlideTemplates>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListSlideTemplatesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listSlideTemplates>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListSlideTemplatesQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listSlideTemplates>>
+  > = ({ signal }) => listSlideTemplates(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listSlideTemplates>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListSlideTemplatesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listSlideTemplates>>
+>;
+export type ListSlideTemplatesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List slide templates
+ */
+
+export function useListSlideTemplates<
+  TData = Awaited<ReturnType<typeof listSlideTemplates>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListSlideTemplatesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listSlideTemplates>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListSlideTemplatesQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Save a slide-by-slide outline as a reusable template
+ */
+export const getCreateSlideTemplateUrl = () => {
+  return `/api/slide-templates`;
+};
+
+export const createSlideTemplate = async (
+  createSlideTemplateBody: CreateSlideTemplateBody,
+  options?: RequestInit,
+): Promise<SlideTemplate> => {
+  return customFetch<SlideTemplate>(getCreateSlideTemplateUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createSlideTemplateBody),
+  });
+};
+
+export const getCreateSlideTemplateMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createSlideTemplate>>,
+    TError,
+    { data: BodyType<CreateSlideTemplateBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createSlideTemplate>>,
+  TError,
+  { data: BodyType<CreateSlideTemplateBody> },
+  TContext
+> => {
+  const mutationKey = ["createSlideTemplate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createSlideTemplate>>,
+    { data: BodyType<CreateSlideTemplateBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createSlideTemplate(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateSlideTemplateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createSlideTemplate>>
+>;
+export type CreateSlideTemplateMutationBody = BodyType<CreateSlideTemplateBody>;
+export type CreateSlideTemplateMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Save a slide-by-slide outline as a reusable template
+ */
+export const useCreateSlideTemplate = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createSlideTemplate>>,
+    TError,
+    { data: BodyType<CreateSlideTemplateBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createSlideTemplate>>,
+  TError,
+  { data: BodyType<CreateSlideTemplateBody> },
+  TContext
+> => {
+  return useMutation(getCreateSlideTemplateMutationOptions(options));
+};
+
+/**
+ * @summary Delete a slide template
+ */
+export const getDeleteSlideTemplateUrl = (id: string) => {
+  return `/api/slide-templates/${id}`;
+};
+
+export const deleteSlideTemplate = async (
+  id: string,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteSlideTemplateUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteSlideTemplateMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteSlideTemplate>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteSlideTemplate>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["deleteSlideTemplate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteSlideTemplate>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteSlideTemplate(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteSlideTemplateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteSlideTemplate>>
+>;
+
+export type DeleteSlideTemplateMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Delete a slide template
+ */
+export const useDeleteSlideTemplate = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteSlideTemplate>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteSlideTemplate>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getDeleteSlideTemplateMutationOptions(options));
 };
 
 /**

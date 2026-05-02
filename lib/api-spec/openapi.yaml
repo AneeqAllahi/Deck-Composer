@@ -20,6 +20,8 @@ tags:
     description: RAG corpus management
   - name: storage
     description: File upload and serving
+  - name: slide-templates
+    description: Reusable per-slide outline templates
 paths:
   /healthz:
     get:
@@ -460,6 +462,66 @@ paths:
         "204":
           description: Deleted successfully
 
+  /slide-templates:
+    get:
+      operationId: listSlideTemplates
+      tags: [slide-templates]
+      summary: List slide templates
+      parameters:
+        - name: projectId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: If provided, returns global templates plus templates scoped to this project
+      responses:
+        "200":
+          description: List of slide templates
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SlideTemplate"
+    post:
+      operationId: createSlideTemplate
+      tags: [slide-templates]
+      summary: Save a slide-by-slide outline as a reusable template
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSlideTemplateBody"
+      responses:
+        "201":
+          description: Created template
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SlideTemplate"
+
+  /slide-templates/{id}:
+    delete:
+      operationId: deleteSlideTemplate
+      tags: [slide-templates]
+      summary: Delete a slide template
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted successfully
+        "404":
+          description: Template not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
   /storage/uploads/request-url:
     post:
       operationId: requestUploadUrl
@@ -858,6 +920,83 @@ components:
         instruction:
           type: string
           description: Optional instruction for how to regenerate the slide
+
+    SlideTemplateOutline:
+      type: object
+      properties:
+        slideIndex:
+          type: integer
+        title:
+          type: string
+        guidance:
+          type: string
+      required:
+        - slideIndex
+        - guidance
+
+    SlideTemplate:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        slideCount:
+          type: integer
+        narrativeStructure:
+          type: string
+          enum: [problem-solution, consulting, chronological, mece-pyramid, executive-summary, custom]
+        outlines:
+          type: array
+          items:
+            $ref: "#/components/schemas/SlideTemplateOutline"
+        projectId:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - description
+        - slideCount
+        - narrativeStructure
+        - outlines
+        - createdAt
+        - updatedAt
+
+    CreateSlideTemplateBody:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        slideCount:
+          type: integer
+          minimum: 3
+          maximum: 30
+        narrativeStructure:
+          type: string
+          enum: [problem-solution, consulting, chronological, mece-pyramid, executive-summary, custom]
+        outlines:
+          type: array
+          items:
+            $ref: "#/components/schemas/SlideTemplateOutline"
+        projectId:
+          type: string
+          nullable: true
+      required:
+        - name
+        - slideCount
+        - narrativeStructure
+        - outlines
 
     DeckStats:
       type: object
