@@ -99,6 +99,33 @@ router.post("/decks/generate", async (req, res) => {
       slideOutlines?: SlideOutline[];
     };
 
+    if (body.slideOutlines !== undefined) {
+      if (!Array.isArray(body.slideOutlines)) {
+        return res.status(400).json({ error: "slideOutlines must be an array" });
+      }
+      const seen = new Set<number>();
+      for (const outline of body.slideOutlines) {
+        if (
+          typeof outline.slideIndex !== "number" ||
+          !Number.isInteger(outline.slideIndex) ||
+          outline.slideIndex < 0 ||
+          outline.slideIndex >= body.slideCount
+        ) {
+          return res.status(400).json({ error: `slideOutlines: slideIndex must be an integer in [0, ${body.slideCount})` });
+        }
+        if (seen.has(outline.slideIndex)) {
+          return res.status(400).json({ error: `slideOutlines: duplicate slideIndex ${outline.slideIndex}` });
+        }
+        seen.add(outline.slideIndex);
+        if (typeof outline.guidance !== "string" || outline.guidance.length > 1000) {
+          return res.status(400).json({ error: "slideOutlines: guidance must be a string up to 1000 chars" });
+        }
+        if (outline.title !== undefined && outline.title !== null && (typeof outline.title !== "string" || outline.title.length > 200)) {
+          return res.status(400).json({ error: "slideOutlines: title must be a string up to 200 chars" });
+        }
+      }
+    }
+
     const brandProfile = await getBrandProfileForDeck(body.projectId);
 
     const searchQuery = `${body.title} ${body.brief} ${body.audience}`;
