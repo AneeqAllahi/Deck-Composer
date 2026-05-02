@@ -9,16 +9,35 @@ type RetrievalChunk = RetrievalEntry["chunks"][number];
 const MAX_VISIBLE_SOURCES = 3;
 
 function formatLocation(chunk: RetrievalChunk): string {
-  // The API returns source slide titles and heading paths but not 1-based slide
-  // numbers (chunks come from many file types — pdf, pptx, md). Show the most
-  // specific human-readable locator we have.
-  if (chunk.metadata?.sourceSlideTitle) {
-    return `“${chunk.metadata.sourceSlideTitle}”`;
+  // Prefer a concrete locator (slide N / page N) so users can find the exact
+  // place in the source. Fall back to the slide title or last heading when
+  // the chunk doesn't carry a numeric index (e.g. plain markdown).
+  const m = chunk.metadata;
+  if (m?.sourceSlideIndex != null) {
+    const n = m.sourceSlideIndex + 1; // chunker stores 0-based; humans want 1-based
+    return m.sourceSlideTitle ? `slide ${n} — ${m.sourceSlideTitle}` : `slide ${n}`;
   }
-  if (chunk.metadata?.headingPath?.length) {
-    return chunk.metadata.headingPath[chunk.metadata.headingPath.length - 1];
+  if (m?.pageNumber != null) {
+    return `page ${m.pageNumber}`;
+  }
+  if (m?.sourceSlideTitle) {
+    return `“${m.sourceSlideTitle}”`;
+  }
+  if (m?.headingPath?.length) {
+    return m.headingPath[m.headingPath.length - 1];
   }
   return "";
+}
+
+function locationKey(chunk: RetrievalChunk): string {
+  // Group identifier so the same doc + same slide/page collapses, but two
+  // different slides from the same exemplar deck both surface as distinct
+  // citations (e.g. "Q3 Investor Deck.pdf, slide 4" + "…, slide 12").
+  const m = chunk.metadata;
+  if (m?.sourceSlideIndex != null) return `${chunk.documentId}#s${m.sourceSlideIndex}`;
+  if (m?.pageNumber != null) return `${chunk.documentId}#p${m.pageNumber}`;
+  if (m?.headingPath?.length) return `${chunk.documentId}#h${m.headingPath.join(">")}`;
+  return `${chunk.documentId}`;
 }
 
 export function SlideSourceCitations({
@@ -30,17 +49,20 @@ export function SlideSourceCitations({
 }) {
   if (!retrieval || retrieval.chunks.length === 0) return null;
 
-  // De-duplicate by document so we don't show "Foo.pdf, Foo.pdf, Foo.pdf" — keep
-  // the highest-scoring chunk per document for the snippet shown on hover.
-  const byDoc = new Map<string, RetrievalChunk>();
+  // De-duplicate by (document + location) so the same chunk doesn't repeat,
+  // but two different slides/pages from the same exemplar both show up as
+  // distinct citations. Keep the highest-scoring chunk per location for the
+  // snippet shown on hover.
+  const byLocation = new Map<string, RetrievalChunk>();
   for (const c of retrieval.chunks) {
-    const existing = byDoc.get(c.documentId);
-    if (!existing || c.score > existing.score) byDoc.set(c.documentId, c);
+    const key = locationKey(c);
+    const existing = byLocation.get(key);
+    if (!existing || c.score > existing.score) byLocation.set(key, c);
   }
-  const sources = Array.from(byDoc.values())
+  const sources = Array.from(byLocation.values())
     .sort((a, b) => b.score - a.score)
     .slice(0, MAX_VISIBLE_SOURCES);
-  const hiddenCount = byDoc.size - sources.length;
+  const hiddenCount = byLocation.size - sources.length;
 
   return (
     <div

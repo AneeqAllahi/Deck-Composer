@@ -120,7 +120,12 @@ export type GenerationLogResponse = {
         vectorRank?: number;
         text: string;
         contextualSummary?: string | null;
-        metadata?: { sourceSlideTitle?: string | null; headingPath?: string[] } | null;
+        metadata?: {
+          sourceSlideTitle?: string | null;
+          sourceSlideIndex?: number | null;
+          pageNumber?: number | null;
+          headingPath?: string[];
+        } | null;
       }[];
     }[];
     totalChunksConsidered: number;
