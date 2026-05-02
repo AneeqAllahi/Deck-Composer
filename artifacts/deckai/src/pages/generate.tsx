@@ -39,18 +39,6 @@ const generateSchema = z.object({
       message: "Brief needs at least 20 characters to generate a quality deck",
     });
   }
-  if (data.mode === "slide-by-slide") {
-    const hasAny = (data.slideOutlines ?? []).some(
-      (o) => o.guidance.trim().length > 0 || (o.title?.trim().length ?? 0) > 0 || !!o.imageObjectPath,
-    );
-    if (!hasAny) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["slideOutlines"],
-        message: "Provide guidance, a title, or an image for at least one slide",
-      });
-    }
-  }
 });
 
 type GenerateFormValues = z.infer<typeof generateSchema>;
@@ -479,11 +467,6 @@ export function GeneratePage() {
                           />
                         ))}
                       </div>
-                      {form.formState.errors.slideOutlines && (
-                        <p className="text-sm text-destructive">
-                          {(form.formState.errors.slideOutlines as { message?: string }).message ?? "Provide guidance, a title, or an image for at least one slide"}
-                        </p>
-                      )}
                     </div>
                   </div>
                 )}
