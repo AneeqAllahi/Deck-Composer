@@ -287,7 +287,7 @@ export async function ingestDocument(params: IngestionParams): Promise<void> {
 }
 
 const BACKFILL_BATCH_SIZE = 200;
-const BACKFILL_MAX_DOCS_PER_RUN = Number(process.env.RAG_BACKFILL_MAX_DOCS_PER_RUN ?? "200");
+export const BACKFILL_MAX_DOCS_PER_RUN = Number(process.env.RAG_BACKFILL_MAX_DOCS_PER_RUN ?? "200");
 
 async function reembedChunkRows(
   docId: string,

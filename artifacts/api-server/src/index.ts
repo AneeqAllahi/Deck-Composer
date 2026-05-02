@@ -2,7 +2,7 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { ensurePostgresExtensions } from "./lib/dbMigrate";
 import {
-  backfillContextualSummaries,
+  BACKFILL_MAX_DOCS_PER_RUN,
   countPendingBackfillDocs,
 } from "./lib/ingestion";
 import { startReembedJob } from "./lib/reembedJobs";
@@ -65,15 +65,23 @@ app.listen(port, (err) => {
 
   logger.info({ port }, "Server listening");
 
-  // Run RAG schema migrations and idempotent backfill in background
+  // Run RAG schema migrations and idempotent backfill in background.
+  // The startup backfill is routed through startReembedJob (same registry the
+  // admin endpoint uses) so it shares the activeJobId guard — an admin POST
+  // arriving right after boot will see alreadyRunning=true and poll the boot
+  // job instead of overlapping with it (which would waste embedding-API calls
+  // and race on the same chunk rows). Capped at BACKFILL_MAX_DOCS_PER_RUN to
+  // bound startup time; the rest is picked up by nightly cron or manual admin.
   void (async () => {
     await ensurePostgresExtensions();
     if (process.env.RAG_BACKFILL_ON_STARTUP !== "false") {
-      try {
-        await backfillContextualSummaries();
-      } catch (e) {
-        logger.warn({ err: e }, "Backfill on startup failed (non-fatal)");
-      }
+      const { job, alreadyRunning } = startReembedJob({ maxDocs: BACKFILL_MAX_DOCS_PER_RUN });
+      logger.info(
+        { jobId: job.id, alreadyRunning, cap: BACKFILL_MAX_DOCS_PER_RUN },
+        alreadyRunning
+          ? "Startup RAG backfill: a job is already running, skipping"
+          : "Startup RAG backfill: started",
+      );
     }
     scheduleNightlyBackfill();
   })();
