@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { useForm, useFieldArray, Control } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -11,24 +10,47 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
-import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { Wand2, Target, AlignLeft, FolderOpen, ListOrdered, ImagePlus, X, Type } from "lucide-react";
 
+type GenerationMode = "brief" | "slide-by-slide";
+
 const generateSchema = z.object({
   title: z.string().min(3, "Title must be at least 3 characters").max(100, "Title is too long"),
-  brief: z.string().min(20, "Brief needs more detail to generate a quality deck").max(2000, "Brief is too long"),
+  brief: z.string().max(2000, "Brief is too long"),
   audience: z.string().min(2, "Please specify the audience"),
   slideCount: z.number().min(3).max(30),
   narrativeStructure: z.nativeEnum(GenerateDeckBodyNarrativeStructure),
   projectId: z.string().optional(),
+  mode: z.enum(["brief", "slide-by-slide"]),
   slideOutlines: z.array(z.object({
     slideIndex: z.number(),
     title: z.string().optional(),
     guidance: z.string(),
     imageObjectPath: z.string().nullable().optional(),
   })).optional(),
+}).superRefine((data, ctx) => {
+  if (data.mode === "brief" && data.brief.trim().length < 20) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["brief"],
+      message: "Brief needs at least 20 characters to generate a quality deck",
+    });
+  }
+  if (data.mode === "slide-by-slide") {
+    const hasAny = (data.slideOutlines ?? []).some(
+      (o) => o.guidance.trim().length > 0 || (o.title?.trim().length ?? 0) > 0 || !!o.imageObjectPath,
+    );
+    if (!hasAny) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["slideOutlines"],
+        message: "Provide guidance, a title, or an image for at least one slide",
+      });
+    }
+  }
 });
 
 type GenerateFormValues = z.infer<typeof generateSchema>;
@@ -37,12 +59,14 @@ const NO_PROJECT = "__none__";
 
 function SlideOutlineCard({
   index,
+  totalSlides,
   control,
   onImageUploaded,
   onImageRemoved,
   imageObjectPath,
 }: {
   index: number;
+  totalSlides: number;
   control: Control<GenerateFormValues>;
   onImageUploaded: (path: string) => void;
   onImageRemoved: () => void;
@@ -62,7 +86,7 @@ function SlideOutlineCard({
         <div className="flex-shrink-0 w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-xs font-mono font-semibold text-primary">
           {index + 1}
         </div>
-        <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Slide {index + 1}</span>
+        <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Slide {index + 1} of {totalSlides}</span>
       </div>
 
       <FormField
@@ -156,7 +180,6 @@ export function GeneratePage() {
   const [, setLocation] = useLocation();
   const generateDeck = useGenerateDeck();
   const { toast } = useToast();
-  const [slideBySlideEnabled, setSlideBySlideEnabled] = useState(false);
   const { data: projects } = useListProjects();
 
   const form = useForm<GenerateFormValues>({
@@ -168,12 +191,15 @@ export function GeneratePage() {
       slideCount: 10,
       narrativeStructure: "problem-solution",
       projectId: undefined,
+      mode: "brief",
       slideOutlines: Array.from({ length: 10 }, (_, i) => ({ slideIndex: i, title: "", guidance: "", imageObjectPath: null })),
     },
   });
 
+  const mode: GenerationMode = form.watch("mode");
   const slideCount = form.watch("slideCount");
   const slideOutlines = form.watch("slideOutlines");
+  const slideBySlideEnabled = mode === "slide-by-slide";
   const { fields, replace } = useFieldArray({ control: form.control, name: "slideOutlines" });
 
   const handleSlideCountChange = (val: number) => {
@@ -189,6 +215,7 @@ export function GeneratePage() {
 
   const onSubmit = async (data: GenerateFormValues) => {
     try {
+      const isSlideBySlide = data.mode === "slide-by-slide";
       const payload = {
         title: data.title,
         brief: data.brief,
@@ -196,7 +223,7 @@ export function GeneratePage() {
         slideCount: data.slideCount,
         narrativeStructure: data.narrativeStructure,
         projectId: data.projectId === NO_PROJECT ? null : (data.projectId ?? null),
-        slideOutlines: slideBySlideEnabled && Array.isArray(data.slideOutlines)
+        slideOutlines: isSlideBySlide && Array.isArray(data.slideOutlines)
           ? data.slideOutlines.filter((o) => o.guidance.trim().length > 0 || o.title?.trim() || o.imageObjectPath).map((o) => ({
               slideIndex: o.slideIndex,
               guidance: o.guidance,
@@ -250,21 +277,46 @@ export function GeneratePage() {
 
                   <FormField
                     control={form.control}
-                    name="brief"
+                    name="mode"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Strategic Brief</FormLabel>
+                        <FormLabel>Mode</FormLabel>
                         <FormControl>
-                          <Textarea
-                            placeholder="Describe the context, key findings, and main argument. The more detail provided, the better the synthesis."
-                            className="min-h-[150px] resize-y"
-                            {...field}
-                          />
+                          <Tabs value={field.value} onValueChange={(v) => field.onChange(v as GenerationMode)}>
+                            <TabsList className="grid w-full grid-cols-2">
+                              <TabsTrigger value="brief">Full Brief</TabsTrigger>
+                              <TabsTrigger value="slide-by-slide">Slide by Slide</TabsTrigger>
+                            </TabsList>
+                          </Tabs>
                         </FormControl>
-                        <FormMessage />
+                        <FormDescription>
+                          {field.value === "brief"
+                            ? "Provide one strategic brief — the AI structures the deck."
+                            : "Direct the AI per slide — set titles, instructions, and images individually."}
+                        </FormDescription>
                       </FormItem>
                     )}
                   />
+
+                  {mode === "brief" && (
+                    <FormField
+                      control={form.control}
+                      name="brief"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Strategic Brief</FormLabel>
+                          <FormControl>
+                            <Textarea
+                              placeholder="Describe the context, key findings, and main argument. The more detail provided, the better the synthesis."
+                              className="min-h-[150px] resize-y"
+                              {...field}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  )}
                 </div>
 
                 <div className="space-y-4">
@@ -399,24 +451,13 @@ export function GeneratePage() {
                   />
                 </div>
 
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between border-b pb-2">
-                    <div className="flex items-center gap-2 text-lg font-medium">
+                {slideBySlideEnabled && (
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 text-lg font-medium border-b pb-2">
                       <ListOrdered className="h-5 w-5 text-primary" />
-                      <h3>Slide-by-Slide Guidance</h3>
+                      <h3>Per-Slide Guidance</h3>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-muted-foreground">
-                        {slideBySlideEnabled ? "Enabled" : "Disabled"}
-                      </span>
-                      <Switch
-                        checked={slideBySlideEnabled}
-                        onCheckedChange={setSlideBySlideEnabled}
-                      />
-                    </div>
-                  </div>
 
-                  {slideBySlideEnabled ? (
                     <div className="space-y-3">
                       <p className="text-sm text-muted-foreground">
                         Customise individual slides — set a fixed title, add content instructions, or attach an image. Leave any field blank to let the AI decide.
@@ -426,6 +467,7 @@ export function GeneratePage() {
                           <SlideOutlineCard
                             key={field.id}
                             index={index}
+                            totalSlides={slideCount}
                             control={form.control}
                             imageObjectPath={slideOutlines?.[index]?.imageObjectPath}
                             onImageUploaded={(path) => {
@@ -437,13 +479,14 @@ export function GeneratePage() {
                           />
                         ))}
                       </div>
+                      {form.formState.errors.slideOutlines && (
+                        <p className="text-sm text-destructive">
+                          {(form.formState.errors.slideOutlines as { message?: string }).message ?? "Provide guidance, a title, or an image for at least one slide"}
+                        </p>
+                      )}
                     </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">
-                      Enable this to provide specific instructions for individual slides — set an exact title, add content directives, or attach a logo or image to any slide.
-                    </p>
-                  )}
-                </div>
+                  </div>
+                )}
 
               </CardContent>
               <CardFooter className="bg-muted/30 border-t p-6 flex justify-between">

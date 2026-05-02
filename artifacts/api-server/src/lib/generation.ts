@@ -39,7 +39,7 @@ export async function generateDeckSlides(params: {
     ? `\n\nRelevant context from past decks (use for structural and stylistic guidance):\n${corpusContext.slice(0, 8).map((c, i) => `[Context ${i + 1}]: ${c}`).join("\n\n")}`
     : "";
 
-  const filledOutlines = (slideOutlines ?? []).filter((o) => o.guidance.trim().length > 0 || o.title?.trim());
+  const filledOutlines = (slideOutlines ?? []).filter((o) => o.guidance.trim().length > 0 || o.title?.trim() || !!o.imageObjectPath);
   const slideDirectivesSection = filledOutlines.length > 0
     ? `\n\nPer-slide directives — follow these instructions precisely for the specified slides:\n${filledOutlines.map((o) => {
         const parts: string[] = [];
