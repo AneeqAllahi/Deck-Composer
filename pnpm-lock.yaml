@@ -145,9 +145,6 @@ importers:
       '@types/express':
         specifier: ^5.0.6
         version: 5.0.6
-      '@types/multer':
-        specifier: ^1.4.12
-        version: 1.4.13
       '@types/node':
         specifier: 'catalog:'
         version: 25.3.5
@@ -2345,9 +2342,6 @@ packages:
 
   '@types/http-errors@2.0.5':
     resolution: {integrity: sha512-r8Tayk8HJnX0FztbZN7oVqGccWgw98T/0neJphO91KkmOzug1KkofZURD4UaD5uH8AqcFLfdPErnBod0u71/qg==}
-
-  '@types/multer@1.4.13':
-    resolution: {integrity: sha512-bhhdtPw7JqCiEfC9Jimx5LqX9BDIPJEh2q/fQ4bqbBPtyEZYr3cvF22NwG0DmPZNYA0CAf2CnqDB4KIGGpJcaw==}
 
   '@types/node@18.19.130':
     resolution: {integrity: sha512-GRaXQx6jGfL8sKfaIDD6OupbIHBr9jv7Jnaml9tB7l4v068PAOXqfcujMMo5PhbIs6ggR1XODELqahT2R8v0fg==}
@@ -5956,10 +5950,6 @@ snapshots:
       '@types/unist': 3.0.3
 
   '@types/http-errors@2.0.5': {}
-
-  '@types/multer@1.4.13':
-    dependencies:
-      '@types/express': 5.0.6
 
   '@types/node@18.19.130':
     dependencies:
