@@ -286,29 +286,25 @@ export function GeneratePage() {
                     )}
                   />
 
-                  <FormField
-                    control={form.control}
-                    name="brief"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>
-                          {mode === "brief" ? "Strategic Brief" : "Overall Context (optional)"}
-                        </FormLabel>
-                        <FormControl>
-                          <Textarea
-                            placeholder={
-                              mode === "brief"
-                                ? "Describe the context, key findings, and main argument. The more detail provided, the better the synthesis."
-                                : "Optional. Used as overall context for any slides you leave blank below."
-                            }
-                            className={mode === "brief" ? "min-h-[150px] resize-y" : "min-h-[80px] resize-y"}
-                            {...field}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                  {mode === "brief" && (
+                    <FormField
+                      control={form.control}
+                      name="brief"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Strategic Brief</FormLabel>
+                          <FormControl>
+                            <Textarea
+                              placeholder="Describe the context, key findings, and main argument. The more detail provided, the better the synthesis."
+                              className="min-h-[150px] resize-y"
+                              {...field}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  )}
                 </div>
 
                 <div className="space-y-4">
