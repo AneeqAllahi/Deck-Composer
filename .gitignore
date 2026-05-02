@@ -47,3 +47,6 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Chat-attached user assets (never commit user uploads)
+attached_assets/

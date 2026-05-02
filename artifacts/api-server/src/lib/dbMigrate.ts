@@ -103,6 +103,27 @@ export async function ensurePostgresExtensions(): Promise<void> {
       ON corpus_chunks (document_id)
     `);
 
+    // Slide templates (Task #7): user-saved per-slide outlines reusable from
+    // the Generate page. Idempotent backfill so deployed/fresh-DB instances
+    // get the table even if drizzle-kit push wasn't run.
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS slide_templates (
+        id text PRIMARY KEY,
+        name text NOT NULL,
+        description text NOT NULL DEFAULT '',
+        slide_count integer NOT NULL,
+        narrative_structure text NOT NULL,
+        outlines jsonb NOT NULL,
+        project_id text REFERENCES projects(id) ON DELETE CASCADE,
+        created_at timestamp NOT NULL DEFAULT now(),
+        updated_at timestamp NOT NULL DEFAULT now()
+      )
+    `);
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS slide_templates_project_id_idx
+      ON slide_templates (project_id)
+    `);
+
     // Visual brand inputs: rendered page images for brand-guideline / exemplar uploads
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS corpus_document_pages (
