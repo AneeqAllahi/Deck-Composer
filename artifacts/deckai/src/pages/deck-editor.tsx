@@ -11,6 +11,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { useToast } from "@/hooks/use-toast";
 import { Download, ChevronLeft, Wand2, MessageSquare, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { RetrievalLogPanel } from "@/components/RetrievalLogPanel";
 
 export function DeckEditorPage() {
   const { id } = useParams<{ id: string }>();
@@ -35,6 +36,7 @@ export function DeckEditorPage() {
           <div className="font-medium line-clamp-1 max-w-md" data-testid="text-deck-title">{deck.title}</div>
         </div>
         <div className="flex items-center gap-2">
+          <RetrievalLogPanel deckId={deck.id} />
           <a href={`/api/decks/${deck.id}/export`} download data-testid="link-export-pptx">
             <Button size="sm" variant="outline" className="h-8">
               <Download className="mr-2 h-4 w-4" /> Export PPTX

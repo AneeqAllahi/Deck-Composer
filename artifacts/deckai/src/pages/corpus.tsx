@@ -1,7 +1,6 @@
 import { useState } from "react";
 import {
   useListCorpusDocuments,
-  useUploadCorpusDocument,
   useDeleteCorpusDocument,
   useListProjects,
   getListCorpusDocumentsQueryKey,
@@ -18,17 +17,19 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
+import { uploadCorpusDocumentWithKind, type DocumentKind } from "@/lib/ragClient";
 
 const ALL_PROJECTS = "__all__";
 
 export function CorpusPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedProjectId, setSelectedProjectId] = useState<string>(ALL_PROJECTS);
+  const [uploadKind, setUploadKind] = useState<DocumentKind>("exemplar-deck");
+  const [isUploading, setIsUploading] = useState(false);
 
   const { data: projects } = useListProjects();
   const params = selectedProjectId === ALL_PROJECTS ? undefined : { projectId: selectedProjectId };
   const { data: documents, isLoading } = useListCorpusDocuments(params);
-  const uploadDoc = useUploadCorpusDocument();
   const deleteDoc = useDeleteCorpusDocument();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -42,18 +43,27 @@ export function CorpusPage() {
       return;
     }
 
+    setIsUploading(true);
     try {
-      const uploadData: { file: File; projectId?: string } = { file };
-      if (selectedProjectId !== ALL_PROJECTS) {
-        uploadData.projectId = selectedProjectId;
-      }
-      await uploadDoc.mutateAsync({ data: uploadData });
+      await uploadCorpusDocumentWithKind({
+        file,
+        projectId: selectedProjectId === ALL_PROJECTS ? null : selectedProjectId,
+        kind: uploadKind,
+      });
       queryClient.invalidateQueries({ queryKey: getListCorpusDocumentsQueryKey() });
       queryClient.invalidateQueries({ queryKey: getGetDeckStatsQueryKey() });
-      toast({ title: "Document uploaded", description: "Processing started" });
+      toast({
+        title: "Document uploaded",
+        description:
+          uploadKind === "brand-guideline"
+            ? "Style DNA will be extracted automatically"
+            : "Indexing & contextualizing chunks…",
+      });
       if (e.target) e.target.value = "";
     } catch {
       toast({ title: "Upload failed", variant: "destructive" });
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -114,10 +124,22 @@ export function CorpusPage() {
                 ? "Upload to global corpus"
                 : `Upload to "${selectedProject?.name ?? "project"}"`}
             </h3>
-            <p className="text-sm text-muted-foreground mb-6">PDF or PPTX up to 50 MB</p>
+            <p className="text-sm text-muted-foreground mb-4">PDF or PPTX up to 50 MB</p>
+            <div className="flex items-center gap-2 mb-4">
+              <span className="text-xs uppercase tracking-wide text-muted-foreground">Document kind:</span>
+              <Select value={uploadKind} onValueChange={(v) => setUploadKind(v as DocumentKind)}>
+                <SelectTrigger className="h-8 w-56" data-testid="select-upload-kind">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="exemplar-deck">Exemplar Deck (retrieved per slide)</SelectItem>
+                  <SelectItem value="brand-guideline">Brand Guideline (Style DNA)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <div className="relative">
-              <Button disabled={uploadDoc.isPending}>
-                {uploadDoc.isPending ? (
+              <Button disabled={isUploading} data-testid="button-select-file">
+                {isUploading ? (
                   <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Uploading...</>
                 ) : "Select File"}
               </Button>
@@ -126,7 +148,7 @@ export function CorpusPage() {
                 accept=".pdf,.pptx"
                 className="absolute inset-0 opacity-0 cursor-pointer"
                 onChange={handleUpload}
-                disabled={uploadDoc.isPending}
+                disabled={isUploading}
               />
             </div>
           </CardContent>
@@ -167,6 +189,7 @@ export function CorpusPage() {
                     <TableRow>
                       <TableHead>File</TableHead>
                       <TableHead>Type</TableHead>
+                      <TableHead>Kind</TableHead>
                       <TableHead>Project</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead className="text-right">Chunks</TableHead>
@@ -189,6 +212,17 @@ export function CorpusPage() {
                           </TableCell>
                           <TableCell>
                             <Badge variant="outline" className="uppercase text-[10px]">{doc.fileType}</Badge>
+                          </TableCell>
+                          <TableCell>
+                            {(doc as { kind?: string }).kind === "brand-guideline" ? (
+                              <Badge variant="secondary" className="bg-purple-100 text-purple-800 hover:bg-purple-100 text-[10px]">
+                                Brand Guideline
+                              </Badge>
+                            ) : (
+                              <Badge variant="secondary" className="bg-slate-100 text-slate-800 hover:bg-slate-100 text-[10px]">
+                                Exemplar
+                              </Badge>
+                            )}
                           </TableCell>
                           <TableCell>
                             {docProject ? (

@@ -1,5 +1,7 @@
 import app from "./app";
 import { logger } from "./lib/logger";
+import { ensurePostgresExtensions } from "./lib/dbMigrate";
+import { backfillContextualSummaries } from "./lib/ingestion";
 
 const rawPort = process.env["PORT"];
 
@@ -22,4 +24,16 @@ app.listen(port, (err) => {
   }
 
   logger.info({ port }, "Server listening");
+
+  // Run RAG schema migrations and idempotent backfill in background
+  void (async () => {
+    await ensurePostgresExtensions();
+    if (process.env.RAG_BACKFILL_ON_STARTUP !== "false") {
+      try {
+        await backfillContextualSummaries();
+      } catch (e) {
+        logger.warn({ err: e }, "Backfill on startup failed (non-fatal)");
+      }
+    }
+  })();
 });

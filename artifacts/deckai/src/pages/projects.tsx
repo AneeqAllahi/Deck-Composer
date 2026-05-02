@@ -32,6 +32,8 @@ import { useToast } from "@/hooks/use-toast";
 import { Plus, Trash2, ArrowLeft, Save, FolderOpen, FileText, Loader2, Upload, Image as ImageIcon, FileDown } from "lucide-react";
 import { format } from "date-fns";
 import { useUpload } from "@workspace/object-storage-web";
+import { uploadCorpusDocumentWithKind, type DocumentKind } from "@/lib/ragClient";
+import { StyleDnaEditor } from "@/components/StyleDnaEditor";
 
 const createProjectSchema = z.object({
   name: z.string().min(1, "Name is required").max(80),
@@ -215,8 +217,9 @@ export function ProjectDetailPage({ params }: { params: { id: string } }) {
   const updateProject = useUpdateProject();
   const updateLogo = useUpdateProjectLogo();
   const { data: documents, isLoading: docsLoading } = useListCorpusDocuments({ projectId });
-  const uploadDoc = useUploadCorpusDocument();
   const deleteDoc = useDeleteCorpusDocument();
+  const [docUploading, setDocUploading] = useState(false);
+  const [projectDocKind, setProjectDocKind] = useState<DocumentKind>("exemplar-deck");
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -278,13 +281,22 @@ export function ProjectDetailPage({ params }: { params: { id: string } }) {
       toast({ title: "Only PDF and PPTX files are supported", variant: "destructive" });
       return;
     }
+    setDocUploading(true);
     try {
-      await uploadDoc.mutateAsync({ data: { file, projectId } });
+      await uploadCorpusDocumentWithKind({ file, projectId, kind: projectDocKind });
       queryClient.invalidateQueries({ queryKey: getListCorpusDocumentsQueryKey() });
-      toast({ title: "Document uploaded" });
+      toast({
+        title: "Document uploaded",
+        description:
+          projectDocKind === "brand-guideline"
+            ? "Style DNA will be extracted automatically"
+            : "Chunks will appear once indexing completes",
+      });
       if (e.target) e.target.value = "";
     } catch {
       toast({ title: "Upload failed", variant: "destructive" });
+    } finally {
+      setDocUploading(false);
     }
   };
 
@@ -319,7 +331,7 @@ export function ProjectDetailPage({ params }: { params: { id: string } }) {
     );
   }
 
-  const projectDocs = (documents as { id: string; filename: string; fileType: string; chunkCount: number; status: string; projectId?: string | null; createdAt: string }[] | undefined) ?? [];
+  const projectDocs = (documents as { id: string; filename: string; fileType: string; kind?: string; chunkCount: number; status: string; projectId?: string | null; createdAt: string }[] | undefined) ?? [];
 
   return (
     <div className="flex-1 p-8 overflow-auto bg-gray-50/50">
@@ -459,17 +471,28 @@ export function ProjectDetailPage({ params }: { params: { id: string } }) {
                   <CardTitle>Corpus Documents</CardTitle>
                   <CardDescription>PDFs and PPTXs that provide context for decks in this project.</CardDescription>
                 </div>
-                <div className="relative">
-                  <Button size="sm" disabled={uploadDoc.isPending}>
-                    {uploadDoc.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Uploading...</> : <><Upload className="mr-2 h-4 w-4" />Upload</>}
-                  </Button>
-                  <Input
-                    type="file"
-                    accept=".pdf,.pptx"
-                    className="absolute inset-0 opacity-0 cursor-pointer"
-                    onChange={handleFileUpload}
-                    disabled={uploadDoc.isPending}
-                  />
+                <div className="flex items-center gap-2">
+                  <Select value={projectDocKind} onValueChange={(v) => setProjectDocKind(v as DocumentKind)}>
+                    <SelectTrigger className="h-8 w-44" data-testid="select-project-upload-kind">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="exemplar-deck">Exemplar Deck</SelectItem>
+                      <SelectItem value="brand-guideline">Brand Guideline</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <div className="relative">
+                    <Button size="sm" disabled={docUploading}>
+                      {docUploading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Uploading...</> : <><Upload className="mr-2 h-4 w-4" />Upload</>}
+                    </Button>
+                    <Input
+                      type="file"
+                      accept=".pdf,.pptx"
+                      className="absolute inset-0 opacity-0 cursor-pointer"
+                      onChange={handleFileUpload}
+                      disabled={docUploading}
+                    />
+                  </div>
                 </div>
               </CardHeader>
               <CardContent>
@@ -496,6 +519,11 @@ export function ProjectDetailPage({ params }: { params: { id: string } }) {
                               ? <FileText className="h-4 w-4 text-red-500 mr-2 flex-shrink-0" />
                               : <FileDown className="h-4 w-4 text-orange-500 mr-2 flex-shrink-0" />}
                             <span className="truncate max-w-[250px]">{doc.filename}</span>
+                            {(doc as { kind?: string }).kind === "brand-guideline" && (
+                              <Badge variant="secondary" className="ml-2 bg-purple-100 text-purple-800 hover:bg-purple-100 text-[10px]">
+                                Brand
+                              </Badge>
+                            )}
                           </TableCell>
                           <TableCell><Badge variant="outline" className="uppercase text-[10px]">{doc.fileType}</Badge></TableCell>
                           <TableCell>
@@ -516,6 +544,8 @@ export function ProjectDetailPage({ params }: { params: { id: string } }) {
                 )}
               </CardContent>
             </Card>
+
+            <StyleDnaEditor projectId={projectId} />
           </div>
 
           <div className="md:col-span-1">

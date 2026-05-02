@@ -1,97 +1,40 @@
 import { Router } from "express";
 import multer from "multer";
 import { db } from "@workspace/db";
-import { corpusDocumentsTable, corpusChunksTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
-import { chunkText, generateId } from "../lib/rag.js";
-import { logger } from "../lib/logger.js";
+import { corpusDocumentsTable } from "@workspace/db";
+import { eq, desc } from "drizzle-orm";
+import { ingestDocument } from "../lib/ingestion.js";
+import { generateId } from "../lib/rag.js";
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
-async function extractTextFromPdf(buffer: Buffer): Promise<string[]> {
-  try {
-    const pdfParse = await import("pdf-parse");
-    const data = await pdfParse.default(buffer);
-    return chunkText(data.text, 400, 50);
-  } catch (err) {
-    throw new Error(`Failed to parse PDF: ${err}`);
-  }
-}
-
-async function extractTextFromPptx(buffer: Buffer): Promise<{ chunks: string[]; slideTexts: { index: number; text: string }[] }> {
-  const AdmZip = (await import("adm-zip")).default;
-  const { XMLParser } = await import("fast-xml-parser");
-
-  const zip = new AdmZip(buffer);
-  const entries = zip.getEntries();
-  const slideEntries = entries
-    .filter((e) => e.entryName.match(/^ppt\/slides\/slide\d+\.xml$/))
-    .sort((a, b) => {
-      const aNum = parseInt(a.entryName.match(/(\d+)/)?.[1] ?? "0");
-      const bNum = parseInt(b.entryName.match(/(\d+)/)?.[1] ?? "0");
-      return aNum - bNum;
-    });
-
-  const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@_" });
-  const slideTexts: { index: number; text: string }[] = [];
-
-  function extractAllText(obj: unknown): string {
-    if (typeof obj === "string") return obj;
-    if (Array.isArray(obj)) return obj.map(extractAllText).join(" ");
-    if (typeof obj === "object" && obj !== null) {
-      return Object.values(obj as Record<string, unknown>).map(extractAllText).join(" ");
-    }
-    return "";
-  }
-
-  for (let i = 0; i < slideEntries.length; i++) {
-    try {
-      const xmlContent = slideEntries[i].getData().toString("utf8");
-      const parsed = parser.parse(xmlContent);
-      const text = extractAllText(parsed)
-        .replace(/\s+/g, " ")
-        .trim();
-      if (text) {
-        slideTexts.push({ index: i + 1, text });
-      }
-    } catch {
-      // Skip unparseable slides
-    }
-  }
-
-  const allChunks: string[] = [];
-  for (const slide of slideTexts) {
-    const slideChunks = chunkText(slide.text, 300, 30);
-    allChunks.push(...slideChunks.map((c) => `[Slide ${slide.index}] ${c}`));
-  }
-
-  return { chunks: allChunks, slideTexts };
-}
+const ALLOWED_KINDS = new Set(["exemplar-deck", "brand-guideline"]);
 
 router.get("/corpus", async (req, res) => {
   try {
     const projectId = req.query.projectId as string | undefined;
 
-    let docs;
-    if (projectId) {
-      docs = await db.select().from(corpusDocumentsTable)
-        .where(eq(corpusDocumentsTable.projectId, projectId))
-        .orderBy(corpusDocumentsTable.createdAt);
-    } else {
-      docs = await db.select().from(corpusDocumentsTable)
-        .orderBy(corpusDocumentsTable.createdAt);
-    }
+    const docs = projectId
+      ? await db
+          .select()
+          .from(corpusDocumentsTable)
+          .where(eq(corpusDocumentsTable.projectId, projectId))
+          .orderBy(desc(corpusDocumentsTable.createdAt))
+      : await db.select().from(corpusDocumentsTable).orderBy(desc(corpusDocumentsTable.createdAt));
 
-    return res.json(docs.map((d) => ({
-      id: d.id,
-      filename: d.filename,
-      fileType: d.fileType,
-      chunkCount: d.chunkCount,
-      status: d.status,
-      projectId: d.projectId,
-      createdAt: d.createdAt,
-    })));
+    return res.json(
+      docs.map((d) => ({
+        id: d.id,
+        filename: d.filename,
+        fileType: d.fileType,
+        kind: d.kind,
+        chunkCount: d.chunkCount,
+        status: d.status,
+        projectId: d.projectId,
+        createdAt: d.createdAt,
+      })),
+    );
   } catch (err) {
     req.log.error({ err }, "Failed to list corpus documents");
     return res.status(500).json({ error: "Failed to list corpus documents" });
@@ -106,7 +49,8 @@ router.post("/corpus/upload", upload.single("file"), async (req, res) => {
 
   const { originalname, buffer, mimetype } = req.file;
   const isPdf = mimetype === "application/pdf" || originalname.toLowerCase().endsWith(".pdf");
-  const isPptx = mimetype === "application/vnd.openxmlformats-officedocument.presentationml.presentation" ||
+  const isPptx =
+    mimetype === "application/vnd.openxmlformats-officedocument.presentationml.presentation" ||
     originalname.toLowerCase().endsWith(".pptx");
 
   if (!isPdf && !isPptx) {
@@ -115,72 +59,44 @@ router.post("/corpus/upload", upload.single("file"), async (req, res) => {
   }
 
   const projectId = (req.body?.projectId as string | undefined) || null;
+  const kindRaw = (req.body?.kind as string | undefined) || "exemplar-deck";
+  const kind = ALLOWED_KINDS.has(kindRaw) ? kindRaw : "exemplar-deck";
   const docId = generateId();
   const fileType = isPdf ? "pdf" : "pptx";
 
-  const doc = await db.insert(corpusDocumentsTable).values({
-    id: docId,
-    filename: originalname,
-    fileType,
-    chunkCount: 0,
-    status: "processing",
-    projectId,
-  }).returning();
+  const doc = await db
+    .insert(corpusDocumentsTable)
+    .values({
+      id: docId,
+      filename: originalname,
+      fileType,
+      kind,
+      chunkCount: 0,
+      status: "processing",
+      projectId,
+    })
+    .returning();
 
   res.status(201).json({
     id: doc[0].id,
     filename: doc[0].filename,
     fileType: doc[0].fileType,
+    kind: doc[0].kind,
     chunkCount: 0,
     status: "processing",
     projectId: doc[0].projectId,
     createdAt: doc[0].createdAt,
   });
 
-  void setImmediate(async () => {
-    try {
-      let chunks: string[];
-
-      if (isPdf) {
-        chunks = await extractTextFromPdf(buffer);
-      } else {
-        const result = await extractTextFromPptx(buffer);
-        chunks = result.chunks;
-      }
-
-      logger.info({ docId, chunkCount: chunks.length, fileType }, "Corpus document text extracted");
-
-      if (chunks.length > 0) {
-        const { generateEmbeddingsBatch } = await import("../lib/embeddings.js");
-        const INGEST_BATCH = 20;
-        for (let i = 0; i < chunks.length; i += INGEST_BATCH) {
-          const batch = chunks.slice(i, i + INGEST_BATCH);
-          const embeddings = await generateEmbeddingsBatch(batch);
-          const rows = batch.map((text, j) => ({
-            id: generateId(),
-            documentId: docId,
-            chunkText: text,
-            embedding: embeddings[j] ?? undefined,
-          }));
-          await db.insert(corpusChunksTable).values(rows);
-        }
-      }
-
-      await db.update(corpusDocumentsTable)
-        .set({ chunkCount: chunks.length, status: "ready" })
-        .where(eq(corpusDocumentsTable.id, docId));
-
-      logger.info({ docId, chunkCount: chunks.length }, "Corpus document processed successfully");
-    } catch (err) {
-      logger.error({ err, docId, fileType }, "Corpus document processing failed");
-      try {
-        await db.update(corpusDocumentsTable)
-          .set({ status: "error" })
-          .where(eq(corpusDocumentsTable.id, docId));
-      } catch (dbErr) {
-        logger.error({ err: dbErr, docId }, "Failed to update corpus document status to error");
-      }
-    }
+  void setImmediate(() => {
+    void ingestDocument({
+      documentId: docId,
+      filename: originalname,
+      fileType,
+      kind,
+      projectId,
+      buffer,
+    });
   });
 });
 
@@ -191,6 +107,22 @@ router.delete("/corpus/:id", async (req, res) => {
   } catch (err) {
     req.log.error({ err }, "Failed to delete corpus document");
     return res.status(500).json({ error: "Failed to delete corpus document" });
+  }
+});
+
+router.post("/corpus/:id/reprocess", async (req, res) => {
+  try {
+    const docs = await db.select().from(corpusDocumentsTable).where(eq(corpusDocumentsTable.id, req.params.id));
+    if (docs.length === 0) return res.status(404).json({ error: "Document not found" });
+    const doc = docs[0];
+    void setImmediate(async () => {
+      const { reprocessDocument } = await import("../lib/ingestion.js");
+      await reprocessDocument(doc.id);
+    });
+    return res.status(202).json({ ok: true });
+  } catch (err) {
+    req.log.error({ err }, "Failed to reprocess corpus document");
+    return res.status(500).json({ error: "Failed to reprocess corpus document" });
   }
 });
 
