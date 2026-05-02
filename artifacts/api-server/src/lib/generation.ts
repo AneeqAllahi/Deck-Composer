@@ -279,7 +279,9 @@ export async function generateDeckSlides(params: {
         topK: 8,
         documentKinds: ["exemplar-deck"],
       });
-      retrievals = [{ slideIndex: 0, query, chunks }];
+      // v1 legacy behavior: same retrieved exemplars are global context
+      // applied to every slide, not just slide 1.
+      retrievals = outline.map((o) => ({ slideIndex: o.slideIndex, query, chunks }));
     } else {
       retrievals = [];
     }
