@@ -316,11 +316,80 @@ async function reembedChunkRows(
   logger.info({ docId, chunks: chunkRows.length }, "Backfill: document re-embedded");
 }
 
-export async function backfillContextualSummaries(): Promise<void> {
+export type BackfillProgress = {
+  docsDone: number;
+  totalDocs: number;
+  chunksDone: number;
+  totalChunks: number;
+};
+
+export type BackfillOptions = {
+  /**
+   * Maximum number of documents to process in this invocation. Defaults to
+   * BACKFILL_MAX_DOCS_PER_RUN (the boot-time cap). Pass Infinity from admin
+   * triggers to drain the entire backlog in a single run.
+   */
+  maxDocs?: number;
+  /** Called after each document finishes (or fails) so callers can update job state. */
+  onProgress?: (p: BackfillProgress) => void;
+};
+
+/**
+ * Count the distinct documents that still have at least one chunk needing
+ * (re-)embedding under the current EMBED_MODEL. Used both by the admin endpoint
+ * to seed the job's totalDocs and by the nightly cron to decide whether to run.
+ */
+export async function countPendingBackfillDocs(): Promise<{ docs: number; chunks: number }> {
+  const r = await db.execute(sql`
+    SELECT
+      COUNT(DISTINCT cc.document_id)::int AS docs,
+      COUNT(*)::int AS chunks
+    FROM corpus_chunks cc
+    WHERE cc.contextual_summary IS NULL
+       OR cc.embedding IS NULL
+       OR cc.embedding_model IS NULL
+       OR cc.embedding_model <> ${EMBED_MODEL}
+  `);
+  const row = r.rows[0] as { docs: number; chunks: number } | undefined;
+  return { docs: row?.docs ?? 0, chunks: row?.chunks ?? 0 };
+}
+
+export async function backfillContextualSummaries(
+  options: BackfillOptions = {},
+): Promise<BackfillProgress> {
+  const maxDocs = options.maxDocs ?? BACKFILL_MAX_DOCS_PER_RUN;
+  // Snapshot total at the start so progress is measured against a stable denominator
+  // even if new documents are uploaded mid-run. New docs added during the run will
+  // be picked up by the next invocation (boot or admin-triggered).
+  const initial = await countPendingBackfillDocs();
+  const progress: BackfillProgress = {
+    docsDone: 0,
+    totalDocs: initial.docs,
+    chunksDone: 0,
+    totalChunks: initial.chunks,
+  };
+  const emit = () => {
+    try {
+      options.onProgress?.(progress);
+    } catch {
+      // never let a buggy progress callback abort the loop
+    }
+  };
+  emit();
+
+  if (initial.docs === 0) {
+    logger.info("Backfill: nothing to do");
+    return progress;
+  }
+
+  // Track distinct documents seen across the whole run so docsDone counts
+  // unique documents (not occurrences-per-batch). A document with > BATCH_SIZE
+  // pending chunks would otherwise be counted in every batch it spans, both
+  // inflating progress and tripping the maxDocs cap early.
+  const seenDocIds = new Set<string>();
+
   try {
-    let totalDocsProcessed = 0;
-    let totalChunksProcessed = 0;
-    while (totalDocsProcessed < BACKFILL_MAX_DOCS_PER_RUN) {
+    while (seenDocIds.size < maxDocs) {
       const r = await db.execute(sql`
         SELECT cc.id, cc.chunk_text, cc.metadata, cd.id AS doc_id, cd.filename
         FROM corpus_chunks cc
@@ -333,11 +402,11 @@ export async function backfillContextualSummaries(): Promise<void> {
       `);
       const rows = r.rows as { id: string; chunk_text: string; metadata: unknown; doc_id: string; filename: string }[];
       if (rows.length === 0) {
-        if (totalChunksProcessed === 0) logger.info("Backfill: nothing to do");
-        else logger.info({ docs: totalDocsProcessed, chunks: totalChunksProcessed }, "Backfill: complete");
-        return;
+        if (progress.chunksDone === 0) logger.info("Backfill: nothing to do");
+        else logger.info({ docs: progress.docsDone, chunks: progress.chunksDone }, "Backfill: complete");
+        return progress;
       }
-      logger.info({ batch: rows.length, soFarDocs: totalDocsProcessed }, "Backfill: re-processing batch");
+      logger.info({ batch: rows.length, soFarDocs: progress.docsDone }, "Backfill: re-processing batch");
       const byDoc = new Map<string, { id: string; chunk_text: string; filename: string }[]>();
       for (const row of rows) {
         const arr = byDoc.get(row.doc_id) ?? [];
@@ -345,17 +414,22 @@ export async function backfillContextualSummaries(): Promise<void> {
         byDoc.set(row.doc_id, arr);
       }
       for (const [docId, chunkRows] of byDoc.entries()) {
-        if (totalDocsProcessed >= BACKFILL_MAX_DOCS_PER_RUN) {
-          logger.info({ cap: BACKFILL_MAX_DOCS_PER_RUN }, "Backfill: per-run cap reached, will resume next run");
-          return;
+        if (seenDocIds.size >= maxDocs && !seenDocIds.has(docId)) {
+          logger.info({ cap: maxDocs }, "Backfill: per-run cap reached, will resume next run");
+          return progress;
         }
         await reembedChunkRows(docId, chunkRows[0].filename, chunkRows);
-        totalDocsProcessed += 1;
-        totalChunksProcessed += chunkRows.length;
+        const isNewDoc = !seenDocIds.has(docId);
+        seenDocIds.add(docId);
+        if (isNewDoc) progress.docsDone += 1;
+        progress.chunksDone += chunkRows.length;
+        emit();
       }
     }
+    return progress;
   } catch (err) {
     logger.warn({ err }, "Backfill failed");
+    throw err;
   }
 }
 

@@ -6,6 +6,7 @@ import corpusRouter from "./corpus.js";
 import storageRouter from "./storage.js";
 import projectsRouter from "./projects.js";
 import styleDnaRouter from "./styleDna.js";
+import adminRouter from "./admin.js";
 
 const router: IRouter = Router();
 
@@ -16,5 +17,6 @@ router.use(decksRouter);
 router.use(corpusRouter);
 router.use(storageRouter);
 router.use(styleDnaRouter);
+router.use(adminRouter);
 
 export default router;
