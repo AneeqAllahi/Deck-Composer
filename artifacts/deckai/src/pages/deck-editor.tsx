@@ -39,9 +39,9 @@ export function DeckEditorPage() {
     staleTime: 60_000,
   });
 
-  // Project (only fetched when the deck is attached to one) — drives the citations
-  // toggle. Decks without a project still show citations using the generation log,
-  // because there's no per-project preference to honor.
+  // Project (only fetched when the deck is attached to one) — drives the
+  // citations toggle. Citations are an explicit per-project preference, so a
+  // deck with no project shows no footer (and no toggle) at all.
   const projectId = deck?.projectId ?? null;
   const { data: project } = useGetProject(projectId ?? "", {
     query: { enabled: !!projectId, queryKey: getGetProjectQueryKey(projectId ?? "") },
