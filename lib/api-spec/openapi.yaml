@@ -592,6 +592,9 @@ components:
         density:
           type: string
           enum: [spacious, balanced, dense]
+        showSlideCitations:
+          type: boolean
+          description: When true, the deck editor renders a compact "Sources" footer on each generated slide.
         createdAt:
           type: string
           format: date-time
@@ -608,6 +611,7 @@ components:
         - headingFont
         - bodyFont
         - density
+        - showSlideCitations
         - createdAt
         - updatedAt
 
@@ -657,6 +661,9 @@ components:
         density:
           type: string
           enum: [spacious, balanced, dense]
+        showSlideCitations:
+          type: boolean
+          description: Per-project toggle for the in-deck source-citation footer.
 
     SlideOutline:
       type: object

@@ -74,6 +74,8 @@ export interface Project {
   bodyFont: string;
   logoObjectPath?: string | null;
   density: ProjectDensity;
+  /** When true, the deck editor renders a compact "Sources" footer on each generated slide. */
+  showSlideCitations: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -117,6 +119,8 @@ export interface UpdateProjectBody {
   bodyFont?: string;
   logoObjectPath?: string | null;
   density?: UpdateProjectBodyDensity;
+  /** Per-project toggle for the in-deck source-citation footer. */
+  showSlideCitations?: boolean;
 }
 
 export interface SlideOutline {

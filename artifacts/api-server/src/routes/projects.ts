@@ -76,6 +76,7 @@ router.put("/projects/:id", async (req, res) => {
       bodyFont?: string;
       logoObjectPath?: string | null;
       density?: string;
+      showSlideCitations?: boolean;
     };
 
     const rows = await db.select().from(projectsTable).where(eq(projectsTable.id, req.params.id));
@@ -92,6 +93,7 @@ router.put("/projects/:id", async (req, res) => {
         ...(body.bodyFont !== undefined && { bodyFont: body.bodyFont }),
         ...(body.logoObjectPath !== undefined && { logoObjectPath: body.logoObjectPath }),
         ...(body.density !== undefined && { density: body.density }),
+        ...(body.showSlideCitations !== undefined && { showSlideCitations: body.showSlideCitations }),
         updatedAt: new Date(),
       })
       .where(eq(projectsTable.id, req.params.id))

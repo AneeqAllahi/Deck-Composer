@@ -85,6 +85,11 @@ export const ListProjectsResponseItem = zod.object({
   bodyFont: zod.string(),
   logoObjectPath: zod.string().nullish(),
   density: zod.enum(["spacious", "balanced", "dense"]),
+  showSlideCitations: zod
+    .boolean()
+    .describe(
+      'When true, the deck editor renders a compact \"Sources\" footer on each generated slide.',
+    ),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -122,6 +127,11 @@ export const GetProjectResponse = zod.object({
   bodyFont: zod.string(),
   logoObjectPath: zod.string().nullish(),
   density: zod.enum(["spacious", "balanced", "dense"]),
+  showSlideCitations: zod
+    .boolean()
+    .describe(
+      'When true, the deck editor renders a compact \"Sources\" footer on each generated slide.',
+    ),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -143,6 +153,10 @@ export const UpdateProjectBody = zod.object({
   bodyFont: zod.string().optional(),
   logoObjectPath: zod.string().nullish(),
   density: zod.enum(["spacious", "balanced", "dense"]).optional(),
+  showSlideCitations: zod
+    .boolean()
+    .optional()
+    .describe("Per-project toggle for the in-deck source-citation footer."),
 });
 
 export const UpdateProjectResponse = zod.object({
@@ -156,6 +170,11 @@ export const UpdateProjectResponse = zod.object({
   bodyFont: zod.string(),
   logoObjectPath: zod.string().nullish(),
   density: zod.enum(["spacious", "balanced", "dense"]),
+  showSlideCitations: zod
+    .boolean()
+    .describe(
+      'When true, the deck editor renders a compact \"Sources\" footer on each generated slide.',
+    ),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -189,6 +208,11 @@ export const UpdateProjectLogoResponse = zod.object({
   bodyFont: zod.string(),
   logoObjectPath: zod.string().nullish(),
   density: zod.enum(["spacious", "balanced", "dense"]),
+  showSlideCitations: zod
+    .boolean()
+    .describe(
+      'When true, the deck editor renders a compact \"Sources\" footer on each generated slide.',
+    ),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });

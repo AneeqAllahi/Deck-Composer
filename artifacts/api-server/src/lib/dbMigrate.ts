@@ -48,6 +48,12 @@ export async function ensurePostgresExtensions(): Promise<void> {
     await db.execute(sql`ALTER TABLE corpus_chunks ADD COLUMN IF NOT EXISTS embedding_model text`);
     await db.execute(sql`ALTER TABLE corpus_chunks ADD COLUMN IF NOT EXISTS slide_index integer`);
 
+    // Per-project UI toggle for the new in-deck source-citation footer (Task #9).
+    // Default true so existing projects show citations immediately without an extra opt-in.
+    await db.execute(
+      sql`ALTER TABLE projects ADD COLUMN IF NOT EXISTS show_slide_citations boolean NOT NULL DEFAULT true`,
+    );
+
     // New RAG v2 tables
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS style_dna (

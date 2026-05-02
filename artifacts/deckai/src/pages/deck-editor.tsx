@@ -1,28 +1,67 @@
 import { useState, useEffect } from "react";
 import { useParams, Link } from "wouter";
-import { useGetDeck, useUpdateSlide, useRegenerateSlide, getGetDeckQueryKey } from "@workspace/api-client-react";
-import type { Deck, Slide } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import {
+  useGetDeck,
+  useUpdateSlide,
+  useRegenerateSlide,
+  useGetProject,
+  useUpdateProject,
+  getGetDeckQueryKey,
+  getGetProjectQueryKey,
+} from "@workspace/api-client-react";
+import type { Deck, Slide, Project } from "@workspace/api-client-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useToast } from "@/hooks/use-toast";
-import { Download, ChevronLeft, Wand2, MessageSquare, Loader2 } from "lucide-react";
+import { Download, ChevronLeft, Wand2, MessageSquare, Loader2, Quote } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { RetrievalLogPanel } from "@/components/RetrievalLogPanel";
+import { SlideSourceCitations } from "@/components/SlideSourceCitations";
+import { getDeckGenerationLog, type GenerationLogResponse } from "@/lib/ragClient";
 
 export function DeckEditorPage() {
   const { id } = useParams<{ id: string }>();
   const { data: deck, isLoading } = useGetDeck(id, { query: { enabled: !!id, queryKey: getGetDeckQueryKey(id) } });
   const [selectedSlideIndex, setSelectedSlideIndex] = useState(0);
 
+  // Generation log — needed for the per-slide source citation footer. Only meaningful
+  // once the deck row exists; gating on deck.id keeps us from racing the deck fetch.
+  const { data: generationLog } = useQuery<GenerationLogResponse>({
+    queryKey: ["generation-log", deck?.id],
+    queryFn: () => getDeckGenerationLog(deck!.id),
+    enabled: !!deck?.id,
+    staleTime: 60_000,
+  });
+
+  // Project (only fetched when the deck is attached to one) — drives the citations
+  // toggle. Decks without a project still show citations using the generation log,
+  // because there's no per-project preference to honor.
+  const projectId = deck?.projectId ?? null;
+  const { data: project } = useGetProject(projectId ?? "", {
+    query: { enabled: !!projectId, queryKey: getGetProjectQueryKey(projectId ?? "") },
+  });
+
   if (isLoading || !deck) {
     return <div className="flex-1 flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
   }
 
   const selectedSlide = deck.slides.find(s => s.slideIndex === selectedSlideIndex) ?? deck.slides[0];
+
+  // Citations are a per-project preference, so we only show them once the
+  // project has loaded and explicitly opts in. Decks without a project, or
+  // while the project query is still in flight, render no footer to avoid
+  // a flash of incorrect state.
+  const showCitations = !!project && project.showSlideCitations;
+
+  const retrievalForSlide = selectedSlide
+    ? generationLog?.log?.retrievals.find((r) => r.slideIndex === selectedSlide.slideIndex)
+    : undefined;
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden">
@@ -36,6 +75,7 @@ export function DeckEditorPage() {
           <div className="font-medium line-clamp-1 max-w-md" data-testid="text-deck-title">{deck.title}</div>
         </div>
         <div className="flex items-center gap-2">
+          {project ? <CitationsToggle project={project} /> : null}
           <RetrievalLogPanel deckId={deck.id} />
           <a href={`/api/decks/${deck.id}/export`} download data-testid="link-export-pptx">
             <Button size="sm" variant="outline" className="h-8">
@@ -78,8 +118,13 @@ export function DeckEditorPage() {
         </div>
 
         <div className="flex-1 flex flex-col bg-gray-100 overflow-hidden">
-          <div className="flex-1 p-8 overflow-auto flex items-center justify-center">
+          <div className="flex-1 p-8 overflow-auto flex flex-col items-center justify-center gap-3">
             {selectedSlide && <SlideCanvas deckId={deck.id} slide={selectedSlide} />}
+            {selectedSlide && showCitations && retrievalForSlide ? (
+              <div className="w-full max-w-[960px]">
+                <SlideSourceCitations retrieval={retrievalForSlide} />
+              </div>
+            ) : null}
           </div>
 
           {selectedSlide && (
@@ -96,6 +141,50 @@ export function DeckEditorPage() {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function CitationsToggle({ project }: { project: Project }) {
+  const updateProject = useUpdateProject();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  // Local state so the switch flips immediately while the PUT is in flight.
+  // Cleared whenever we successfully sync, the project changes, or the
+  // server-side value changes underneath us — otherwise stale optimistic
+  // values would override fresh project data.
+  const [optimistic, setOptimistic] = useState<boolean | null>(null);
+  useEffect(() => {
+    setOptimistic(null);
+  }, [project.id, project.showSlideCitations]);
+  const checked = optimistic ?? project.showSlideCitations;
+
+  const handleChange = async (next: boolean) => {
+    setOptimistic(next);
+    try {
+      await updateProject.mutateAsync({ id: project.id, data: { showSlideCitations: next } });
+      // Invalidate so the stored Project (and any other view of it) picks up the change.
+      queryClient.invalidateQueries({ queryKey: getGetProjectQueryKey(project.id) });
+      setOptimistic(null);
+    } catch {
+      setOptimistic(null);
+      toast({ title: "Failed to update citation setting", variant: "destructive" });
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-2 pr-1">
+      <Quote className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
+      <Label htmlFor="toggle-citations" className="text-xs text-muted-foreground cursor-pointer">
+        Sources
+      </Label>
+      <Switch
+        id="toggle-citations"
+        data-testid="switch-show-citations"
+        checked={checked}
+        onCheckedChange={handleChange}
+        disabled={updateProject.isPending}
+      />
     </div>
   );
 }

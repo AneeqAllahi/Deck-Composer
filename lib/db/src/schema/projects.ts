@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -13,6 +13,7 @@ export const projectsTable = pgTable("projects", {
   bodyFont: text("body_font").notNull().default("Inter"),
   logoObjectPath: text("logo_object_path"),
   density: text("density").notNull().default("balanced"),
+  showSlideCitations: boolean("show_slide_citations").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

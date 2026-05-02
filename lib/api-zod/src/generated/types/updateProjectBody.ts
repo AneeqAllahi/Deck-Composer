@@ -17,4 +17,6 @@ export interface UpdateProjectBody {
   bodyFont?: string;
   logoObjectPath?: string | null;
   density?: UpdateProjectBodyDensity;
+  /** Per-project toggle for the in-deck source-citation footer. */
+  showSlideCitations?: boolean;
 }

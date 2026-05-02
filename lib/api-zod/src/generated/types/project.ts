@@ -18,6 +18,8 @@ export interface Project {
   bodyFont: string;
   logoObjectPath?: string | null;
   density: ProjectDensity;
+  /** When true, the deck editor renders a compact "Sources" footer on each generated slide. */
+  showSlideCitations: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
