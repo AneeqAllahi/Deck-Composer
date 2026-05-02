@@ -102,15 +102,22 @@ router.post("/style-dna/:projectId/extract", async (req, res) => {
       });
     }
     const doc = docs[0];
-    if (!doc.rawText || doc.rawText.length < 200) {
-      return res.status(400).json({ error: "Source document has no extractable text" });
-    }
     // Reuse stored page renders (if any) so re-extracts also benefit from the vision pass.
     const pageRows = await db
       .select()
       .from(corpusDocumentPagesTable)
       .where(eq(corpusDocumentPagesTable.documentId, doc.id))
       .orderBy(asc(corpusDocumentPagesTable.pageIndex));
+
+    // Allow extraction when EITHER usable text OR stored page images exist. Visual-only
+    // brand guidelines (scanned PDFs, image-heavy decks) can still produce a useful
+    // Style DNA from the rendered pages alone.
+    const hasUsableText = !!doc.rawText && doc.rawText.length >= 200;
+    if (!hasUsableText && pageRows.length === 0) {
+      return res.status(400).json({
+        error: "Source document has no extractable text and no stored page images",
+      });
+    }
 
     // Match the ingestion-time cap so re-extracts can't blow up the model request
     // payload (huge brand guidelines could otherwise produce dozens of base64 PNGs).
@@ -133,7 +140,7 @@ router.post("/style-dna/:projectId/extract", async (req, res) => {
       }
     }
 
-    const data = await extractStyleDnaFromTextAndImages(doc.filename, doc.rawText, visionImages);
+    const data = await extractStyleDnaFromTextAndImages(doc.filename, doc.rawText ?? "", visionImages);
     if (!data) return res.status(500).json({ error: "Style DNA extraction returned no data" });
 
     await db

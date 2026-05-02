@@ -131,8 +131,69 @@ async function setStatus(documentId: string, status: string): Promise<void> {
     .where(eq(corpusDocumentsTable.id, documentId));
 }
 
+/**
+ * Render brand-guideline page images, store them, and run the vision-augmented
+ * Style DNA extraction. Runs even when the document has no extractable text
+ * (scanned PDFs, image-heavy PPTX) — vision can still produce a useful palette/
+ * typography/layout profile from the rendered pages alone.
+ */
+async function processBrandGuidelineVisuals(
+  documentId: string,
+  filename: string,
+  fileType: "pdf" | "pptx",
+  projectId: string,
+  buffer: Buffer,
+  rawText: string,
+): Promise<void> {
+  let visionImages: VisionImageInput[] = [];
+  try {
+    visionImages = await renderAndStorePages(documentId, fileType, buffer);
+    logger.info(
+      { documentId, pages: visionImages.length },
+      "Brand-guideline page images rendered and stored",
+    );
+  } catch (err) {
+    logger.warn({ err, documentId }, "Page rendering failed (Style DNA will fall back to text-only)");
+  }
+
+  // Skip extraction only when there is genuinely nothing to send (no text AND no
+  // images). Otherwise run with whatever we have — vision-only or text-only.
+  if (visionImages.length === 0 && rawText.trim().length < 50) {
+    logger.info(
+      { documentId },
+      "Brand-guideline document yielded neither text nor images; skipping Style DNA",
+    );
+    return;
+  }
+
+  try {
+    const styleDna = await extractStyleDnaFromTextAndImages(filename, rawText, visionImages);
+    if (styleDna) {
+      await db
+        .insert(styleDnaTable)
+        .values({ projectId, data: styleDna, sourceDocumentId: documentId })
+        .onConflictDoUpdate({
+          target: styleDnaTable.projectId,
+          set: {
+            data: styleDna,
+            sourceDocumentId: documentId,
+            extractedAt: new Date(),
+            updatedAt: new Date(),
+          },
+        });
+      logger.info(
+        { projectId, documentId, visionImages: visionImages.length },
+        "Style DNA extracted and stored",
+      );
+    }
+  } catch (err) {
+    logger.warn({ err, documentId }, "Style DNA extraction failed (document still indexed)");
+  }
+}
+
 export async function ingestDocument(params: IngestionParams): Promise<void> {
   const { documentId, filename, fileType, kind, projectId, buffer } = params;
+  const isBrandGuideline = kind === "brand-guideline" && !!projectId;
   try {
     let rawText = "";
     let chunks: RawChunk[] = [];
@@ -154,6 +215,11 @@ export async function ingestDocument(params: IngestionParams): Promise<void> {
       .where(eq(corpusDocumentsTable.id, documentId));
 
     if (chunks.length === 0) {
+      // No extractable text chunks — skip embeddings, but for brand guidelines we
+      // still run page rendering + vision extraction so visual-only sources work.
+      if (isBrandGuideline && projectId) {
+        await processBrandGuidelineVisuals(documentId, filename, fileType, projectId, buffer, rawText);
+      }
       await db
         .update(corpusDocumentsTable)
         .set({ chunkCount: 0, status: "ready" })
@@ -203,47 +269,10 @@ export async function ingestDocument(params: IngestionParams): Promise<void> {
       .set({ chunkCount: embedded, status: "ready" })
       .where(eq(corpusDocumentsTable.id, documentId));
 
-    // Visual brand inputs: render thumbnail/page images for brand-guideline uploads,
-    // store them in object storage, then run a vision-augmented Style DNA extraction.
-    if (kind === "brand-guideline" && projectId) {
-      let visionImages: VisionImageInput[] = [];
-      try {
-        visionImages = await renderAndStorePages(documentId, fileType, buffer);
-        logger.info(
-          { documentId, pages: visionImages.length },
-          "Brand-guideline page images rendered and stored",
-        );
-      } catch (err) {
-        logger.warn({ err, documentId }, "Page rendering failed (Style DNA will fall back to text-only)");
-      }
-
-      try {
-        const styleDna = await extractStyleDnaFromTextAndImages(filename, rawText, visionImages);
-        if (styleDna) {
-          await db
-            .insert(styleDnaTable)
-            .values({
-              projectId,
-              data: styleDna,
-              sourceDocumentId: documentId,
-            })
-            .onConflictDoUpdate({
-              target: styleDnaTable.projectId,
-              set: {
-                data: styleDna,
-                sourceDocumentId: documentId,
-                extractedAt: new Date(),
-                updatedAt: new Date(),
-              },
-            });
-          logger.info(
-            { projectId, documentId, visionImages: visionImages.length },
-            "Style DNA extracted and stored",
-          );
-        }
-      } catch (err) {
-        logger.warn({ err, documentId }, "Style DNA extraction failed (document still indexed)");
-      }
+    // Visual brand inputs: render page images for brand-guideline uploads, then run
+    // the vision-augmented Style DNA extraction.
+    if (isBrandGuideline && projectId) {
+      await processBrandGuidelineVisuals(documentId, filename, fileType, projectId, buffer, rawText);
     }
 
     logger.info({ documentId, chunks: embedded }, "Document ingestion complete");
